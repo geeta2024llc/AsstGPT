@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  aiwhisper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aiwhisper-app
+    restart: always
+    ports:
+      - "9002:9002"
+    env_file:
+      - .env
+    volumes:
+      # Persistent named volume for WhatsApp authentication session state
+      - whatsapp-auth-data:/app/whatsapp-auth
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9002/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  whatsapp-auth-data:
+    driver: local

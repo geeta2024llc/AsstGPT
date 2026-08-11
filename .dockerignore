@@ -1,0 +1,11 @@
+# Production Docker Ignore File
+.git
+.gitignore
+.next
+node_modules
+npm-debug.log
+whatsapp-auth
+scratch
+.env*
+!.env.example
+README.md

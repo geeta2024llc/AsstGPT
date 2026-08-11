@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -10,10 +9,18 @@ import {
   Trash2,
   Loader2,
   Eye,
+  Plus,
+  Edit2,
+  Search,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Table,
   TableBody,
@@ -28,16 +35,32 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import type { KnowledgeFile } from '@/types';
-import { Badge } from './ui/badge';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 
 export default function KnowledgeBaseManager() {
   const [files, setFiles] = useState<KnowledgeFile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Add FAQ / Text Modal State
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newType, setNewType] = useState('faq');
+  const [newContent, setNewContent] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Edit Modal State
+  const [editingFile, setEditingFile] = useState<KnowledgeFile | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+
   const { toast } = useToast();
 
   const fetchFiles = async () => {
@@ -73,45 +96,122 @@ export default function KnowledgeBaseManager() {
     setIsUploading(true);
 
     try {
-        const formData = new FormData();
-        formData.append('file', file);
+      const formData = new FormData();
+      formData.append('file', file);
 
-        const res = await fetch('/api/knowledge/parse', {
-          method: 'POST',
-          body: formData,
-        });
+      const res = await fetch('/api/knowledge/parse', {
+        method: 'POST',
+        body: formData,
+      });
 
-        if (!res.ok) {
-          const errorText = await res.text();
-          let errorMessage = `Upload failed with status: ${res.status}`;
-          try {
-            const errorJson = JSON.parse(errorText);
-            errorMessage = errorJson.message || errorMessage;
-          } catch (parseError) {
-             console.error("Could not parse error response as JSON. Server response:", errorText);
-          }
-          throw new Error(errorMessage);
+      if (!res.ok) {
+        const errorText = await res.text();
+        let errorMessage = `Upload failed with status: ${res.status}`;
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.message || errorMessage;
+        } catch {
+          console.error("Could not parse error response JSON:", errorText);
         }
-
-        toast({ title: 'Success', description: `File "${file.name}" uploaded and processed.` });
-        await fetchFiles(); // Refresh list
-
-      } catch (error) {
-        toast({ variant: 'destructive', title: 'Upload Failed', description: (error as Error).message });
-      } finally {
-        setIsUploading(false);
-        if (event.target) event.target.value = '';
+        throw new Error(errorMessage);
       }
+
+      toast({ title: 'Success', description: `File "${file.name}" uploaded and parsed into Knowledge Base.` });
+      await fetchFiles();
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Upload Failed', description: (error as Error).message });
+    } finally {
+      setIsUploading(false);
+      if (event.target) event.target.value = '';
+    }
+  };
+
+  const handleAddManualKnowledge = async () => {
+    if (!newTitle.trim() || !newContent.trim()) {
+      toast({ variant: 'destructive', title: 'Validation Error', description: 'Title and content are required.' });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/knowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: newTitle.trim(),
+          fileType: newType,
+          content: newContent.trim(),
+          enabled: true,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to create knowledge source.');
+      toast({ title: 'Knowledge Source Added', description: `"${newTitle}" is ready for RAG retrieval.` });
+      setIsAddOpen(false);
+      setNewTitle('');
+      setNewContent('');
+      await fetchFiles();
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Error', description: (error as Error).message });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleToggleEnabled = async (file: KnowledgeFile) => {
+    const targetState = !file.enabled;
+    try {
+      const res = await fetch('/api/knowledge', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: file.id, enabled: targetState, status: targetState ? 'ready' : 'disabled' }),
+      });
+      if (!res.ok) throw new Error('Failed to update status');
+
+      setFiles(prev => prev.map(f => f.id === file.id ? { ...f, enabled: targetState, status: targetState ? 'ready' : 'disabled' } : f));
+      toast({
+        title: targetState ? 'Knowledge Enabled' : 'Knowledge Disabled',
+        description: targetState ? `"${file.fileName}" is active for AI answers.` : `"${file.fileName}" will be ignored by RAG.`,
+      });
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Error', description: (error as Error).message });
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingFile || !editTitle.trim() || !editContent.trim()) return;
+
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/knowledge', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingFile.id,
+          fileName: editTitle.trim(),
+          content: editContent.trim(),
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to update knowledge source');
+
+      toast({ title: 'Saved Changes', description: `Updated "${editTitle}".` });
+      setEditingFile(null);
+      await fetchFiles();
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Error', description: (error as Error).message });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleDelete = async (fileId: string, fileName: string) => {
     try {
-        const res = await fetch(`/api/knowledge?id=${fileId}`, { method: 'DELETE' });
-        if(!res.ok) throw new Error('Failed to delete file.');
-        toast({ title: 'File Deleted', description: `"${fileName}" has been removed.` });
-        fetchFiles();
+      const res = await fetch(`/api/knowledge?id=${fileId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete file.');
+      toast({ title: 'Source Removed', description: `"${fileName}" deleted.` });
+      fetchFiles();
     } catch (error) {
-        toast({ variant: 'destructive', title: 'Error', description: (error as Error).message });
+      toast({ variant: 'destructive', title: 'Error', description: (error as Error).message });
     }
   };
 
@@ -122,80 +222,171 @@ export default function KnowledgeBaseManager() {
     const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-  }
+  };
+
+  const filteredFiles = files.filter(f =>
+    f.fileName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    f.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    f.fileType.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const getStatusBadge = (status?: string, enabled?: boolean) => {
+    if (enabled === false || status === 'disabled') {
+      return <Badge variant="outline" className="text-muted-foreground border-muted flex items-center gap-1"><XCircle className="w-3 h-3" /> Disabled</Badge>;
+    }
+    if (status === 'processing') {
+      return <Badge variant="secondary" className="bg-amber-100 text-amber-800 flex items-center gap-1"><Clock className="w-3 h-3 animate-spin" /> Processing</Badge>;
+    }
+    if (status === 'error') {
+      return <Badge variant="destructive" className="flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Error</Badge>;
+    }
+    return <Badge className="bg-emerald-600 text-white flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Ready</Badge>;
+  };
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Upload className="h-6 w-6" /> Upload Document
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-2">
-            <Input
-              id="file-upload"
-              type="file"
-              accept=".pdf,.docx,.txt"
-              onChange={handleFileChange}
-              disabled={isUploading}
-              className="hidden"
-            />
-            <label htmlFor="file-upload" className="flex-1">
-                <Button asChild variant="outline" className="w-full cursor-pointer" disabled={isUploading}>
-                    <div>
-                        {isUploading ? (
-                            <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing...
-                            </>
-                        ) : (
-                            'Choose a file (.pdf, .docx, .txt)'
-                        )}
-                    </div>
+      {/* Top Action Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search knowledge sources..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-8"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Add Manual FAQ Dialog */}
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+            <DialogTrigger asChild>
+              <Button className="flex items-center gap-2">
+                <Plus className="h-4 w-4" /> Add FAQ / Text
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-xl">
+              <DialogHeader>
+                <DialogTitle>Add Knowledge Source</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground">Title / Topic</label>
+                  <Input
+                    placeholder="e.g. Refund Policy & Working Hours FAQ"
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground">Source Type</label>
+                  <select
+                    value={newType}
+                    onChange={(e) => setNewType(e.target.value)}
+                    className="w-full h-9 rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="faq">FAQ / Question-Answer</option>
+                    <option value="txt">Plain Text Document</option>
+                    <option value="url">Web Page / URL Content</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground">Business Facts & Knowledge Content</label>
+                  <Textarea
+                    placeholder="Write or paste your verified business facts, prices, contact numbers, and policies..."
+                    value={newContent}
+                    onChange={(e) => setNewContent(e.target.value)}
+                    className="h-48 font-mono text-sm"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsAddOpen(false)}>Cancel</Button>
+                <Button onClick={handleAddManualKnowledge} disabled={isSubmitting}>
+                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save Source'}
                 </Button>
-            </label>
-          </div>
-        </CardContent>
-      </Card>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Upload File Button */}
+          <Input
+            id="file-upload"
+            type="file"
+            accept=".pdf,.docx,.txt"
+            onChange={handleFileChange}
+            disabled={isUploading}
+            className="hidden"
+          />
+          <label htmlFor="file-upload">
+            <Button asChild variant="outline" className="cursor-pointer" disabled={isUploading}>
+              <div>
+                {isUploading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="mr-2 h-4 w-4" /> Upload Document
+                  </>
+                )}
+              </div>
+            </Button>
+          </label>
+        </div>
+      </div>
+
+      {/* Main Knowledge Base Table */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <FileText className="h-6 w-6" /> Stored Documents
+            <FileText className="h-5 w-5 text-primary" /> Tenant Knowledge Sources
           </CardTitle>
+          <CardDescription>
+            Knowledge sources are indexed for RAG retrieval to generate accurate AI customer answers.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Filename</TableHead>
+                <TableHead>Active</TableHead>
+                <TableHead>Title / File</TableHead>
                 <TableHead>Type</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="hidden md:table-cell">Size</TableHead>
-                <TableHead className="hidden md:table-cell">Uploaded</TableHead>
+                <TableHead className="hidden md:table-cell">Created</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center">
-                    <Loader2 className="mx-auto my-4 h-6 w-6 animate-spin" />
+                  <TableCell colSpan={7} className="text-center py-8">
+                    <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
                   </TableCell>
                 </TableRow>
-              ) : files.length === 0 ? (
+              ) : filteredFiles.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                    No documents uploaded yet.
+                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                    No matching knowledge sources found.
                   </TableCell>
                 </TableRow>
               ) : (
-                files.map((file) => (
+                filteredFiles.map((file) => (
                   <TableRow key={file.id}>
-                    <TableCell className="max-w-[150px] truncate font-medium sm:max-w-xs">{file.fileName}</TableCell>
+                    <TableCell>
+                      <Switch
+                        checked={file.enabled !== false}
+                        onCheckedChange={() => handleToggleEnabled(file)}
+                      />
+                    </TableCell>
+                    <TableCell className="max-w-[180px] truncate font-medium sm:max-w-xs">{file.fileName}</TableCell>
                     <TableCell><Badge variant="secondary">{file.fileType.toUpperCase()}</Badge></TableCell>
-                    <TableCell className="hidden md:table-cell">{formatBytes(file.size)}</TableCell>
-                    <TableCell className="hidden md:table-cell">{format(new Date(file.createdAt), 'PPp')}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell>{getStatusBadge(file.status, file.enabled)}</TableCell>
+                    <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{formatBytes(file.size)}</TableCell>
+                    <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{format(new Date(file.createdAt), 'MMM d, p')}</TableCell>
+                    <TableCell className="text-right space-x-1">
+                      {/* View Modal */}
                       <Dialog>
                         <DialogTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -204,13 +395,53 @@ export default function KnowledgeBaseManager() {
                         </DialogTrigger>
                         <DialogContent className="max-w-3xl">
                           <DialogHeader>
-                            <DialogTitle>{file.fileName}</DialogTitle>
+                            <DialogTitle>{file.fileName} ({file.fileType.toUpperCase()})</DialogTitle>
                           </DialogHeader>
-                          <ScrollArea className="h-[60vh] rounded-md border p-4 font-mono text-sm">
+                          <ScrollArea className="h-[60vh] rounded-md border p-4 font-mono text-sm whitespace-pre-wrap">
                             {file.content}
                           </ScrollArea>
                         </DialogContent>
                       </Dialog>
+
+                      {/* Edit Modal */}
+                      <Dialog open={editingFile?.id === file.id} onOpenChange={(open) => !open && setEditingFile(null)}>
+                        <DialogTrigger asChild>
+                          <Button variant="ghost" size="icon" onClick={() => {
+                            setEditingFile(file);
+                            setEditTitle(file.fileName);
+                            setEditContent(file.content);
+                          }}>
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-2xl">
+                          <DialogHeader>
+                            <DialogTitle>Edit Knowledge Source</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4 py-2">
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground">Title</label>
+                              <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground">Content</label>
+                              <Textarea
+                                value={editContent}
+                                onChange={(e) => setEditContent(e.target.value)}
+                                className="h-64 font-mono text-sm"
+                              />
+                            </div>
+                          </div>
+                          <DialogFooter>
+                            <Button variant="outline" onClick={() => setEditingFile(null)}>Cancel</Button>
+                            <Button onClick={handleSaveEdit} disabled={isSubmitting}>
+                              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save Changes'}
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+
+                      {/* Delete */}
                       <Button variant="ghost" size="icon" onClick={() => handleDelete(file.id, file.fileName)}>
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>

@@ -2,9 +2,12 @@ import { NextResponse } from 'next/server';
 import { updateAgent, deleteAgent, getAgent, addLog } from '@/lib/db';
 import type { Agent } from '@/types';
 
-export async function GET(_req: Request, ctx: { params: { id: string } | Promise<{ id: string }> }) {
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const { id } = await ctx.params;
+    const { id } = await params;
     const agent = await getAgent(id);
     if (!agent) return NextResponse.json({ message: 'Not found' }, { status: 404 });
     return NextResponse.json(agent);
@@ -14,9 +17,12 @@ export async function GET(_req: Request, ctx: { params: { id: string } | Promise
   }
 }
 
-export async function PATCH(request: Request, ctx: { params: { id: string } | Promise<{ id: string }> }) {
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const { id } = await ctx.params;
+    const { id } = await params;
     const body = (await request.json()) as Partial<Omit<Agent, 'id'>>;
     console.log('Updating agent:', id, 'with body:', body);
     
@@ -49,9 +55,12 @@ export async function PATCH(request: Request, ctx: { params: { id: string } | Pr
   }
 }
 
-export async function DELETE(_req: Request, ctx: { params: { id: string } | Promise<{ id: string }> }) {
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const { id } = await ctx.params;
+    const { id } = await params;
     await deleteAgent(id);
     await addLog({
       user: 'Admin',

@@ -40,6 +40,13 @@ next-env.d.ts
 .genkit/*
 .env*
 
+# whatsapp baileys auth session credentials (NEVER commit secrets to git)
+whatsapp-auth/
+/whatsapp-auth
+
+# temporary scratch scripts
+scratch/
+
 # firebase
 firebase-debug.log
 firestore-debug.log

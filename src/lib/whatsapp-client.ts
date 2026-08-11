@@ -14,7 +14,7 @@ import qr from 'qrcode';
 import path from 'path';
 import fs from 'fs/promises';
 import * as db from './db';
-import { generateAIResponse } from './ai';
+import { generateAIResponse, retrieveRelevantKnowledgeContext } from './ai';
 import type { Message, Agent } from '@/types';
 
 const WHATSAPP_AUTH_DIR = path.join(process.cwd(), 'whatsapp-auth');
@@ -68,139 +68,196 @@ if (!global.whatsappState) {
 const state = global.whatsappState;
 
 async function handleMessage(msg: WAMessage) {
-    try {
-        if (!msg.message || !msg.key.remoteJid || isJidGroup(msg.key.remoteJid)) {
-            return;
-        }
-
-        const chatId = msg.key.remoteJid;
-        const messageContent = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
-        if (!messageContent) return;
-
-        // Derive a sensible sender name. Sometimes WhatsApp supplies pushName as a single '.' or empty string.
-        const rawName = (msg.pushName || '').trim();
-        const senderName = rawName && rawName !== '.' ? rawName : chatId.split('@')[0];
-
-        const message: Message = {
-            id: msg.key.id!,
-            chatId,
-            fromMe: !!msg.key.fromMe,
-            text: messageContent,
-            timestamp: (typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any)?.toNumber?.() || Date.now()/1000) * 1000,
-            senderName,
-        };
-
-        await db.addMessage(message);
-
-        const convo = await db.getConversation(chatId);
-        await db.updateConversation(chatId, {
-            name: message.senderName,
-            lastMessage: { text: message.text, timestamp: message.timestamp },
-            unreadCount: (convo?.unreadCount || 0) + (message.fromMe ? 0 : 1),
-        });
-        
-        if(!message.fromMe) {
-            await db.incrementStat('received');
-
-            // ----------------- Agent Routing & Auto-response -----------------
-            let agent: Agent | undefined;
-            const convoAfterUpdate = await db.getConversation(chatId);
-            if (convoAfterUpdate?.assignedAgentId) {
-                agent = await db.getAgent(convoAfterUpdate.assignedAgentId);
-            }
-            if (!agent) {
-                const agents = await db.getAgents();
-                agent = agents[0]; // naive default: first agent in list
-                if (agent) {
-                    await db.setConversationAssignedAgent(chatId, agent.id);
-                }
-            }
-            if (agent) {
-                console.log('=== AGENT FOUND ===');
-                console.log('Agent mode:', agent.mode);
-                console.log('Agent has aiSettings:', !!agent.aiSettings);
-                
-                // --- AI-based agent ---
-                if (agent.mode === 'ai' && agent.aiSettings) {
-                    console.log('=== CALLING AI AGENT ===');
-                    try {
-                        const aiReply = await generateAIResponse(messageContent, agent.aiSettings);
-                        console.log('=== AI REPLY RECEIVED ===');
-                        console.log('AI reply:', aiReply);
-                        console.log('AI reply length:', aiReply?.length);
-                        console.log('AI reply truthy:', !!aiReply);
-                        
-                        if (aiReply) {
-                            console.log('=== SENDING AI REPLY ===');
-                            await sendMessage(chatId, aiReply);
-                            await db.addLog({
-                                user: agent.name,
-                                action: 'AI Response Sent',
-                                details: aiReply.slice(0, 120),
-                                type: 'info',
-                            });
-                            return;
-                        } else {
-                            console.log('=== AI REPLY WAS EMPTY, FALLING BACK ===');
-                        }
-                    } catch (err) {
-                        console.error('AI response failed:', err);
-                        await db.addLog({ user: agent.name, action: 'AI Response Failed', details: (err as Error).message, type: 'error' });
-                    }
-                } else {
-                    console.log('=== NOT AN AI AGENT OR NO AI SETTINGS ===');
-                }
-                const lowerText = messageContent.toLowerCase();
-                let chosenResponse: string | undefined;
-                for (const rule of agent.rules) {
-                    const keywords = rule.trigger.value.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
-                    if (keywords.length && keywords.some(kw => lowerText.includes(kw))) {
-                        chosenResponse = rule.responses.length > 0
-                            ? rule.responses[Math.floor(Math.random()*rule.responses.length)]
-                            : undefined;
-                        break;
-                    }
-                }
-                if (!chosenResponse) {
-                    chosenResponse = agent.fallbackResponse || "Sorry, I didn't quite understand that.";
-                }
-                try {
-                    await db.addLog({
-                        user: agent.name,
-                        action: 'Auto-response Attempt',
-                        details: `Sending to ${chatId}: ${chosenResponse}`,
-                        type: 'info',
-                    });
-                    await sendMessage(chatId, chosenResponse);
-                    await db.addLog({
-                        user: agent.name,
-                        action: 'Auto-response Sent',
-                        details: chosenResponse,
-                        type: 'info',
-                    });
-                } catch(err) {
-                    console.error('Auto-response failed:', err);
-                    await db.incrementStat('errors');
-                    await db.addLog({
-                        user: agent.name,
-                        action: 'Auto-response Failed',
-                        details: (err as Error).message,
-                        type: 'error',
-                    });
-                }
-            } else {
-                console.warn('No agent available to respond.');
-            }
-        }
-    } catch (error) {
-        console.error('Error handling message:', error);
-        await db.addLog({
-            user: 'System',
-            action: 'Message Processing Failed',
-            details: (error as Error).message,
-            type: 'error',
-        });
+  try {
+    if (!msg.message || !msg.key.remoteJid || isJidGroup(msg.key.remoteJid)) {
+      return;
     }
+
+    const chatId = msg.key.remoteJid;
+    const providerMessageId = msg.key.id;
+    const messageContent = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+
+    if (!messageContent || !providerMessageId) return;
+
+    // 1. Idempotency Check: Skip duplicate events emitted by Baileys
+    const isDuplicate = await db.hasMessage(providerMessageId);
+    if (isDuplicate) {
+      await db.addLog({
+        user: 'System',
+        action: 'Duplicate Message Skipped',
+        details: `Message ${providerMessageId} from ${chatId} was already processed.`,
+        type: 'info',
+      });
+      return;
+    }
+
+    // Derive a sensible sender name. Sometimes WhatsApp supplies pushName as a single '.' or empty string.
+    const rawName = (msg.pushName || '').trim();
+    const senderName = rawName && rawName !== '.' ? rawName : chatId.split('@')[0];
+
+    const message: Message = {
+      id: providerMessageId,
+      chatId,
+      fromMe: !!msg.key.fromMe,
+      text: messageContent,
+      timestamp: (typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any)?.toNumber?.() || Date.now()/1000) * 1000,
+      senderName,
+    };
+
+    // 2. Persist Inbound Message to Supabase (Atomic DB Idempotency)
+    const addResult = await db.addMessage(message);
+    if (addResult.duplicate) {
+      console.log(`[DIAGNOSTIC] Duplicate message skipped by atomic DB constraint: ${providerMessageId}`);
+      await db.addLog({
+        user: 'System',
+        action: 'Duplicate Message Skipped',
+        details: `Message ${providerMessageId} from ${chatId} was rejected as duplicate by database constraint.`,
+        type: 'info',
+      });
+      return;
+    }
+
+    console.log(`[DIAGNOSTIC] Inbound message persisted: ${providerMessageId} from ${chatId}`);
+    await db.addLog({
+      user: senderName,
+      action: 'WhatsApp Message Received',
+      details: `From ${chatId}: ${messageContent.slice(0, 100)}`,
+      type: 'info',
+    });
+
+    // If message is from me, do not initiate automated agent response pipeline
+    if (message.fromMe) return;
+
+    // 3. Agent Selection Logic
+    let agent: Agent | undefined;
+    const convo = await db.getConversation(chatId);
+    if (convo && (convo.assignedAgentId === null || convo.assignedAgentId === '')) {
+      console.log(`[HANDOFF] Conversation ${chatId} is currently assigned to Human Operator. Skipping AI response.`);
+      await db.addLog({
+        user: 'Human Operator',
+        action: 'AI Response Skipped',
+        details: `Conversation ${chatId} is in Human Takeover mode. AI auto-reply skipped.`,
+        type: 'info',
+      });
+      return;
+    }
+
+    if (convo?.assignedAgentId) {
+      agent = await db.getAgent(convo.assignedAgentId);
+    }
+    if (!agent) {
+      const agents = await db.getAgents();
+      agent = agents.find((a) => a.status === 'active') || agents[0];
+      if (agent) {
+        await db.setConversationAssignedAgent(chatId, agent.id);
+      }
+    }
+
+    if (!agent) {
+      console.warn(`No agent available to respond to conversation ${chatId}.`);
+      await db.addLog({
+        user: 'System',
+        action: 'No Agent Available',
+        details: `No active agent found to handle message from ${chatId}.`,
+        type: 'warning',
+      });
+      return;
+    }
+
+    await db.addLog({
+      user: agent.name,
+      action: 'Agent Selected',
+      details: `Selected agent "${agent.name}" (mode: ${agent.mode}) for ${chatId}`,
+      type: 'info',
+    });
+
+    // 4. AI or Rule-Based Response Pipeline
+    let responseText: string | undefined;
+
+    if (agent.mode === 'ai' && agent.aiSettings) {
+      try {
+        const recentMessages = await db.getMessages(chatId);
+        const history = recentMessages
+          .filter(m => m.id !== providerMessageId)
+          .slice(-6)
+          .map(m => ({ fromMe: m.fromMe, text: m.text }));
+
+        const { context: ragContext, sourcesUsed, chunkCount } = await retrieveRelevantKnowledgeContext(messageContent, agent.aiSettings.knowledgeFileIds);
+        if (sourcesUsed.length > 0) {
+          await db.addLog({
+            user: agent.name,
+            action: 'RAG Knowledge Retrieved',
+            details: `Retrieved ${chunkCount} relevant chunk(s) from source(s): ${sourcesUsed.join(', ')}. Context size: ${ragContext.length} chars.`,
+            type: 'info',
+          });
+        }
+
+        responseText = await generateAIResponse(messageContent, agent.aiSettings, history);
+        if (responseText) {
+          await db.addLog({
+            user: agent.name,
+            action: 'AI Response Generated',
+            details: responseText.slice(0, 120),
+            type: 'info',
+          });
+        }
+      } catch (err) {
+        console.error('AI response generation failed:', err);
+        await db.addLog({
+          user: agent.name,
+          action: 'AI Response Failed',
+          details: (err as Error).message,
+          type: 'error',
+        });
+      }
+    }
+
+    // Rule-based fallback if not AI mode or if AI response failed / returned empty
+    if (!responseText) {
+      const lowerText = messageContent.toLowerCase();
+      for (const rule of agent.rules) {
+        const keywords = rule.trigger.value.split(',').map((k) => k.trim().toLowerCase()).filter(Boolean);
+        if (keywords.length && keywords.some((kw) => lowerText.includes(kw))) {
+          responseText = rule.responses.length > 0
+            ? rule.responses[Math.floor(Math.random() * rule.responses.length)]
+            : undefined;
+          break;
+        }
+      }
+      if (!responseText) {
+        responseText = agent.fallbackResponse || "Sorry, I didn't quite understand that.";
+      }
+    }
+
+    // 5. Send Outbound Response via WhatsApp & Persist to Supabase
+    try {
+      await sendMessage(chatId, responseText);
+      await db.addLog({
+        user: agent.name,
+        action: 'Auto-response Sent',
+        details: responseText.slice(0, 120),
+        type: 'success',
+      });
+    } catch (sendErr) {
+      console.error('Failed to send auto-response:', sendErr);
+      await db.addLog({
+        user: agent.name,
+        action: 'Auto-response Failed',
+        details: (sendErr as Error).message,
+        type: 'error',
+      });
+    }
+  } catch (error) {
+    console.error('Error handling WhatsApp message:', error);
+    try {
+      await db.addLog({
+        user: 'System',
+        action: 'Message Processing Failed',
+        details: (error as Error).message,
+        type: 'error',
+      });
+    } catch (_) {/* ignore logging failure to avoid crash loop */}
+  }
 }
 
 /**
@@ -336,8 +393,10 @@ export async function init() {
   });
 }
 
-// ----------------- Watchdog -----------------
-if (!global.whatsappWatchdog) {
+// ----------------- Watchdog & Auto-Init -----------------
+const isBuilding = process.env.NEXT_PHASE === 'phase-production-build';
+
+if (!global.whatsappWatchdog && !isBuilding) {
     global.whatsappWatchdog = setInterval(() => {
         if (!state.sock || state.status !== 'connected') {
             console.warn('WATCHDOG: Socket not connected, attempting re-init...');
@@ -346,8 +405,8 @@ if (!global.whatsappWatchdog) {
     }, 30_000);
 }
 
-// Trigger initial connection on first import
-if (state.status === 'disconnected' && !state.sock) {
+// Trigger initial connection on first import (runtime only, skipped during build)
+if (state.status === 'disconnected' && !state.sock && !isBuilding) {
     console.log('AUTO_INIT: No active socket, starting initial WhatsApp connect...');
     init().catch(err => console.error('AUTO_INIT failed:', err));
 }

@@ -21,7 +21,38 @@ export default function InboxLayout() {
     const { toast } = useToast();
     const scrollAreaRef = useRef<HTMLDivElement>(null);
 
+    const [searchQuery, setSearchQuery] = useState('');
+    const [filterMode, setFilterMode] = useState<'all' | 'unread'>('all');
+    const [isTogglingTakeover, setIsTogglingTakeover] = useState(false);
+
     const selectedConversation = conversations.find(c => c.id === selectedConversationId);
+
+    const filteredConversations = conversations.filter(c => {
+        const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || c.id.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesFilter = filterMode === 'unread' ? c.unreadCount > 0 : true;
+        return matchesSearch && matchesFilter;
+    });
+
+    const handleToggleTakeover = async (chatId: string, targetMode: 'human' | 'ai') => {
+        setIsTogglingTakeover(true);
+        try {
+            const res = await fetch('/api/inbox/takeover', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chatId, mode: targetMode }),
+            });
+            if (!res.ok) throw new Error('Failed to toggle takeover');
+            toast({
+                title: targetMode === 'human' ? 'Human Takeover Activated' : 'AI Auto-Reply Resumed',
+                description: targetMode === 'human' ? 'AI auto-reply paused for this conversation.' : 'AI will now auto-respond to incoming messages.',
+            });
+            fetchConversations();
+        } catch (err) {
+            toast({ variant: 'destructive', title: 'Action Failed', description: (err as Error).message });
+        } finally {
+            setIsTogglingTakeover(false);
+        }
+    };
 
     const fetchConversations = async () => {
         try {
@@ -120,18 +151,34 @@ export default function InboxLayout() {
                 "w-full transition-transform duration-300 ease-in-out md:w-1/3 md:border-r md:translate-x-0",
                 selectedConversationId && "-translate-x-full"
             )}>
-                <div className="border-b p-4">
-                    <h2 className="font-headline text-xl font-semibold">Conversations</h2>
+                <div className="border-b p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                        <h2 className="font-headline text-lg font-semibold">Conversations</h2>
+                        <select
+                            value={filterMode}
+                            onChange={(e) => setFilterMode(e.target.value as any)}
+                            className="text-xs border rounded px-2 py-1 bg-background text-foreground"
+                        >
+                            <option value="all">All</option>
+                            <option value="unread">Unread</option>
+                        </select>
+                    </div>
+                    <Input
+                        placeholder="Search contact..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="h-8 text-xs"
+                    />
                 </div>
                 <ScrollArea className="h-full">
                     {isLoading.convos ? (
                         <div className="flex items-center justify-center p-8">
                             <Loader2 className="h-8 w-8 animate-spin text-primary" />
                         </div>
-                    ) : conversations.length === 0 ? (
-                        <p className="p-4 text-center text-muted-foreground">No conversations yet.</p>
+                    ) : filteredConversations.length === 0 ? (
+                        <p className="p-4 text-center text-muted-foreground text-sm">No matching conversations.</p>
                     ) : (
-                        conversations.map(convo => (
+                        filteredConversations.map(convo => (
                             <div key={convo.id} onClick={() => setSelectedConversationId(convo.id)} className={cn("flex cursor-pointer items-center gap-3 p-3 hover:bg-muted/50", selectedConversationId === convo.id && 'bg-muted')}>
                                 <Avatar>
                                     <AvatarImage src={convo.avatar} alt={convo.name} />
@@ -156,16 +203,36 @@ export default function InboxLayout() {
             )}>
                 {selectedConversation ? (
                     <>
-                        <header className="flex shrink-0 items-center gap-3 border-b p-4">
-                            <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setSelectedConversationId(null)}>
-                                <ArrowLeft className="h-5 w-5" />
-                                <span className="sr-only">Back to conversations</span>
+                        <header className="flex shrink-0 items-center justify-between border-b p-3">
+                            <div className="flex items-center gap-3">
+                                <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setSelectedConversationId(null)}>
+                                    <ArrowLeft className="h-5 w-5" />
+                                    <span className="sr-only">Back to conversations</span>
+                                </Button>
+                                <Avatar>
+                                     <AvatarImage src={selectedConversation.avatar} alt={selectedConversation.name} />
+                                    <AvatarFallback>{selectedConversation.name.charAt(0).toUpperCase()}</AvatarFallback>
+                                </Avatar>
+                                <div>
+                                    <h3 className="font-headline font-semibold">{selectedConversation.name}</h3>
+                                    <span className={cn(
+                                        "text-xs px-2 py-0.5 rounded font-medium",
+                                        (selectedConversation.assignedAgentId === null || selectedConversation.assignedAgentId === '')
+                                            ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                                            : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
+                                    )}>
+                                        {(selectedConversation.assignedAgentId === null || selectedConversation.assignedAgentId === '') ? '👤 Human Takeover' : '🤖 AI Auto-Reply'}
+                                    </span>
+                                </div>
+                            </div>
+                            <Button
+                                variant={(selectedConversation.assignedAgentId === null || selectedConversation.assignedAgentId === '') ? "default" : "outline"}
+                                size="sm"
+                                disabled={isTogglingTakeover}
+                                onClick={() => handleToggleTakeover(selectedConversation.id, (selectedConversation.assignedAgentId === null || selectedConversation.assignedAgentId === '') ? 'ai' : 'human')}
+                            >
+                                {(selectedConversation.assignedAgentId === null || selectedConversation.assignedAgentId === '') ? 'Resume AI' : 'Takeover'}
                             </Button>
-                            <Avatar>
-                                 <AvatarImage src={selectedConversation.avatar} alt={selectedConversation.name} />
-                                <AvatarFallback>{selectedConversation.name.charAt(0).toUpperCase()}</AvatarFallback>
-                            </Avatar>
-                            <h3 className="font-headline font-semibold">{selectedConversation.name}</h3>
                         </header>
                         <ScrollArea className="flex-1 bg-background/50 p-4" ref={scrollAreaRef}>
                             {isLoading.messages ? (

@@ -7,6 +7,7 @@ import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 // Since we're using the legacy build, we must provide the worker.
 // This is a workaround for Next.js environments.
+// @ts-ignore
 await import('pdfjs-dist/build/pdf.worker.mjs');
 
 export async function POST(request: Request) {

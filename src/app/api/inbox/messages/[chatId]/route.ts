@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
   request: Request,
-  { params }: { params: { chatId: string } }
+  { params }: { params: Promise<{ chatId: string }> }
 ) {
   try {
     // `params` is now an async proxy in Next.js 15 — await it before reading

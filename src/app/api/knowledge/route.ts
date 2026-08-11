@@ -1,6 +1,5 @@
-
 import { NextResponse } from 'next/server';
-import { getKnowledgeFiles, deleteKnowledgeFile, addLog } from '@/lib/db';
+import { getKnowledgeFiles, addKnowledgeFile, updateKnowledgeFile, deleteKnowledgeFile, addLog } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,37 +13,103 @@ export async function GET() {
   }
 }
 
-export async function DELETE(request: Request) {
-    try {
-        const { searchParams } = new URL(request.url);
-        const id = searchParams.get('id');
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { fileName, fileType, content, enabled } = body;
 
-        if (!id) {
-            return NextResponse.json({ message: 'File ID is required.' }, { status: 400 });
-        }
-
-        const files = await getKnowledgeFiles();
-        const fileToDelete = files.find(f => f.id === id);
-
-        await deleteKnowledgeFile(id);
-
-        await addLog({
-            user: 'Admin',
-            action: 'Deleted Document',
-            details: `File "${fileToDelete?.fileName || id}" was deleted.`,
-            type: 'info',
-        });
-
-        return NextResponse.json({ message: 'File deleted successfully.' }, { status: 200 });
-
-    } catch (error) {
-        console.error('Failed to delete knowledge file:', error);
-        await addLog({
-            user: 'System',
-            action: 'Document Deletion Failed',
-            details: (error as Error).message,
-            type: 'error',
-        });
-        return NextResponse.json({ message: 'Failed to delete knowledge file' }, { status: 500 });
+    if (!fileName || !content) {
+      return NextResponse.json({ message: 'Title and content are required.' }, { status: 400 });
     }
+
+    const newFile = await addKnowledgeFile({
+      fileName,
+      fileType: fileType || 'faq',
+      size: Buffer.byteLength(content, 'utf-8'),
+      content,
+      enabled: enabled !== false,
+      status: 'ready',
+    });
+
+    await addLog({
+      user: 'Admin',
+      action: 'Created Knowledge Source',
+      details: `Added knowledge source "${fileName}" (${fileType || 'faq'}).`,
+      type: 'info',
+    });
+
+    return NextResponse.json(newFile, { status: 201 });
+  } catch (error) {
+    console.error('Failed to create knowledge file:', error);
+    return NextResponse.json({ message: (error as Error).message }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    const { id, fileName, fileType, content, enabled, status } = body;
+
+    if (!id) {
+      return NextResponse.json({ message: 'Knowledge source ID is required.' }, { status: 400 });
+    }
+
+    const updateData: any = {};
+    if (fileName !== undefined) updateData.fileName = fileName;
+    if (fileType !== undefined) updateData.fileType = fileType;
+    if (content !== undefined) {
+      updateData.content = content;
+      updateData.size = Buffer.byteLength(content, 'utf-8');
+    }
+    if (enabled !== undefined) updateData.enabled = enabled;
+    if (status !== undefined) updateData.status = status;
+
+    await updateKnowledgeFile(id, updateData);
+
+    await addLog({
+      user: 'Admin',
+      action: 'Updated Knowledge Source',
+      details: `Updated knowledge source ID "${id}". Enabled: ${enabled ?? 'unchanged'}, Status: ${status ?? 'ready'}`,
+      type: 'info',
+    });
+
+    return NextResponse.json({ message: 'Knowledge source updated successfully.' });
+  } catch (error) {
+    console.error('Failed to update knowledge file:', error);
+    return NextResponse.json({ message: (error as Error).message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ message: 'File ID is required.' }, { status: 400 });
+    }
+
+    const files = await getKnowledgeFiles();
+    const fileToDelete = files.find(f => f.id === id);
+
+    await deleteKnowledgeFile(id);
+
+    await addLog({
+      user: 'Admin',
+      action: 'Deleted Knowledge Source',
+      details: `Knowledge source "${fileToDelete?.fileName || id}" was deleted.`,
+      type: 'info',
+    });
+
+    return NextResponse.json({ message: 'Knowledge source deleted successfully.' }, { status: 200 });
+  } catch (error) {
+    console.error('Failed to delete knowledge file:', error);
+    await addLog({
+      user: 'System',
+      action: 'Knowledge Deletion Failed',
+      details: (error as Error).message,
+      type: 'error',
+    });
+    return NextResponse.json({ message: 'Failed to delete knowledge file' }, { status: 500 });
+  }
 }

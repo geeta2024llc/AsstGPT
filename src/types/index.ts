@@ -9,6 +9,7 @@ export interface Conversation {
   avatar: string;
   /** Agent currently assigned to this conversation */
   assignedAgentId?: string;
+  status?: 'open' | 'resolved';
 }
 
 export interface Message {
@@ -65,12 +66,15 @@ export interface Stats {
 }
 
 export interface KnowledgeFile {
-  id:string;
+  id: string;
   fileName: string;
   fileType: string;
   size: number; // in bytes
   content: string; // extracted text
+  enabled?: boolean;
+  status?: 'ready' | 'processing' | 'disabled' | 'error';
   createdAt: number;
+  updatedAt?: number;
 }
 
 export interface LogEntry {
@@ -82,12 +86,14 @@ export interface LogEntry {
   type: 'info' | 'warning' | 'error' | 'success';
 }
 
-// --- Dashboard Specific Types ---
+// --- Dashboard & Production Analytics Types ---
 
 export interface TimeSeriesDataPoint {
   date: string;
   Sent?: number;
   Received?: number;
+  NewConvos?: number;
+  ResolvedConvos?: number;
 }
 
 export interface ErrorBreakdownPoint {
@@ -112,4 +118,68 @@ export interface DashboardData {
   messageTrend: TimeSeriesDataPoint[];
   errorBreakdown: ErrorBreakdownPoint[];
   recentErrors: LogEntry[];
+}
+
+export interface KnowledgeUsagePoint {
+  sourceName: string;
+  count: number;
+}
+
+export interface AgentMetricPoint {
+  id: string;
+  name: string;
+  status: AgentStatus;
+  mode: AgentMode;
+  conversationsHandled: number;
+  aiResponses: number;
+  failures: number;
+  humanHandoffs: number;
+  lastActivity?: number;
+}
+
+export interface AnalyticsData {
+  range: 'today' | '7d' | '30d';
+  kpis: {
+    totalConversations: number;
+    activeConversations: number;
+    resolvedConversations: number;
+    totalMessages: number;
+    incomingMessages: number;
+    outgoingMessages: number;
+    aiResponses: number;
+    humanResponses: number;
+    aiResponseFailures: number;
+    activeAgents: number;
+  };
+  conversationAnalytics: {
+    openVsResolvedRatio: { open: number; resolved: number; openPercentage: number };
+    avgMessagesPerConversation: number;
+    humanTakeoverCount: number;
+    currentHumanTakeoverCount: number;
+    dailyConvoTrend: Array<{ date: string; created: number; resolved: number }>;
+  };
+  messageTrend: TimeSeriesDataPoint[];
+  aiPerformance: {
+    aiResponseCount: number;
+    aiFailureCount: number;
+    aiSuccessRate: number;
+    humanTakeoverCount: number;
+    currentHumanTakeoverCount: number;
+    aiVsHumanRatio: string;
+    avgResponseTimeSeconds: number | null; // null if not measurable reliably
+    avgResponseTimeFormatted: string;
+  };
+  errorAnalytics: {
+    totalErrors: number;
+    byCategory: ErrorBreakdownPoint[];
+    recentErrors: LogEntry[];
+  };
+  ragAnalytics: {
+    retrievalCount: number;
+    successfulRetrievals: number;
+    retrievalFailures: number;
+    sourcesUsed: KnowledgeUsagePoint[];
+    queriesWithNoKnowledge: number;
+  };
+  agentPerformance: AgentMetricPoint[];
 }

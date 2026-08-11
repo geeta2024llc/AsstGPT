@@ -1,0 +1,23 @@
+# Caddy Reverse Proxy for AIWhisper Backend
+# Automatically provisions free HTTPS SSL via Let's Encrypt / ZeroSSL
+
+{$DOMAIN_NAME:localhost} {
+    # Forward all API & backend traffic to AIWhisper container on port 9002
+    reverse_proxy 127.0.0.1:9002 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # Standard security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Enable gzip compression
+    encode gzip
+}
