@@ -44,9 +44,6 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Persistent volume for WhatsApp authentication state
-VOLUME ["/app/whatsapp-auth"]
-
 USER nextjs
 
 EXPOSE 9002
