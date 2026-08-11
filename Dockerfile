@@ -40,7 +40,6 @@ RUN adduser --system --uid 1001 nextjs
 RUN mkdir -p /app/whatsapp-auth && chown -R nextjs:nodejs /app/whatsapp-auth && chmod 777 /app/whatsapp-auth
 
 # Copy standalone build assets
-COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
