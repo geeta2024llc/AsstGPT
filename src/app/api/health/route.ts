@@ -26,10 +26,20 @@ export async function GET() {
     process.env.GOOGLE_API_KEY
   );
 
+  // Safety net: if the WhatsApp client has been stuck in "connecting" for far
+  // longer than its own internal recovery window should ever allow, treat it
+  // as a hard failure so the platform's healthcheck can restart the container
+  // instead of the app silently sitting degraded indefinitely.
+  const waStuckConnecting = waState.status === 'connecting'
+    && waState.connectingSince !== null
+    && Date.now() - waState.connectingSince > 120_000;
+
   let overallStatus: 'ok' | 'degraded' | 'error' = 'ok';
   if (dbStatus !== 'connected') {
     overallStatus = 'error';
   } else if (!hasGeminiKey) {
+    overallStatus = 'error';
+  } else if (waStuckConnecting) {
     overallStatus = 'error';
   } else if (waState.status !== 'connected') {
     overallStatus = 'degraded';
@@ -47,5 +57,5 @@ export async function GET() {
       aiConfigured: hasGeminiKey,
       whatsappAccount: waState.account ? waState.account.name : null,
     },
-  });
+  }, { status: overallStatus === 'error' ? 503 : 200 });
 }

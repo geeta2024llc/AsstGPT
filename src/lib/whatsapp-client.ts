@@ -46,7 +46,14 @@ interface WhatsAppClientState {
   qr: string | null;
   account: { id: string; name: string } | null;
   lastDisconnect: { reason: string; date: string } | null;
+  connectingSince: number | null;
 }
+
+// If a connection attempt hasn't opened (or closed) within this window, treat the
+// socket as a zombie and force it closed rather than waiting indefinitely on a
+// close event that may never arrive (e.g. a network path that silently
+// black-holes the WebSocket instead of erroring).
+const CONNECT_TIMEOUT_MS = 45_000;
 
 // Use a simple global object for state management in Next.js dev environment
 declare global {
@@ -62,6 +69,7 @@ if (!global.whatsappState) {
         qr: null,
         account: null,
         lastDisconnect: null,
+        connectingSince: null,
     };
 }
 
@@ -309,88 +317,111 @@ export async function init() {
   
   console.log('INIT: Starting connection process...');
   state.status = 'connecting';
-  
-  const { state: authState, saveCreds } = await useMultiFileAuthState(WHATSAPP_AUTH_DIR);
+  state.connectingSince = Date.now();
 
-  // Ensure we're always using the latest WhatsApp Web version to avoid 515 errors
-  const { version: waVersion } = await fetchLatestBaileysVersion();
+  try {
+    const { state: authState, saveCreds } = await useMultiFileAuthState(WHATSAPP_AUTH_DIR);
 
-  const sock = makeWASocket({
-      logger: pino({ level: 'info' }),
-      printQRInTerminal: false,
-      auth: authState,
-            // Choose a browser descriptor appropriate to the host OS so the code works
-      // identically on macOS, Linux & Windows deployments.
-      browser: getHostBrowserDescriptor(),
-      markOnlineOnConnect: true,
-      connectTimeoutMs: 30_000,
-      syncFullHistory: false,
-      version: waVersion,
-  });
-  
-  state.sock = sock;
+    // Ensure we're always using the latest WhatsApp Web version to avoid 515 errors
+    const { version: waVersion } = await fetchLatestBaileysVersion();
 
-  // Attach event listeners
-  sock.ev.on('creds.update', saveCreds);
+    const sock = makeWASocket({
+        logger: pino({ level: 'info' }),
+        printQRInTerminal: false,
+        auth: authState,
+              // Choose a browser descriptor appropriate to the host OS so the code works
+        // identically on macOS, Linux & Windows deployments.
+        browser: getHostBrowserDescriptor(),
+        markOnlineOnConnect: true,
+        connectTimeoutMs: 30_000,
+        syncFullHistory: false,
+        version: waVersion,
+    });
 
-  sock.ev.on('messages.upsert', (update) => {
-    for (const msg of update.messages) {
-      handleMessage(msg);
-    }
-  });
+    state.sock = sock;
 
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect, qr: newQr } = update;
-    console.log(`CONN_UPDATE: status=${connection}, qr=${!!newQr}`);
+    // Belt-and-suspenders on top of connectTimeoutMs: if the connection hasn't
+    // reached 'open' (or 'close') within CONNECT_TIMEOUT_MS, force it closed so
+    // the socket can never sit as a zombie in state.sock while status stays
+    // stuck at 'connecting' forever (that state previously made the watchdog's
+    // recovery attempts permanently no-ops, since init() bails out whenever
+    // state.sock is set).
+    const connectTimeoutTimer = setTimeout(() => {
+        console.warn(`INIT: Connection did not open within ${CONNECT_TIMEOUT_MS}ms, forcing teardown...`);
+        sock.end(new Error('Connect timeout: no open/close event received'));
+    }, CONNECT_TIMEOUT_MS);
 
-    if (newQr) {
-        state.qr = await qr.toDataURL(newQr);
-        if (state.status !== 'connected') {
-            // Only go to connecting if we aren't already connected
-            state.status = 'connecting';
-        }
-    }
+    // Attach event listeners
+    sock.ev.on('creds.update', saveCreds);
 
-    if (connection === 'open') {
-        state.status = 'connected';
-        state.qr = null;
-        state.account = { id: sock.user!.id, name: sock.user!.name || 'N/A' };
-        console.log('CONN_UPDATE: Connection opened successfully.');
-    }
+    sock.ev.on('messages.upsert', (update) => {
+      for (const msg of update.messages) {
+        handleMessage(msg);
+      }
+    });
 
-    if (connection === 'close') {
-        const code = (lastDisconnect?.error as Boom | undefined)?.output?.statusCode;
-        // Cleanly remove all listeners from this socket to avoid duplicate events during reconnect
-        try {
-            // removeAllListeners typing mismatch in Baileys; cast to any to avoid TS error
-            (sock.ev as any).removeAllListeners();
-        } catch (_) {/* ignore */}
+    sock.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect, qr: newQr } = update;
+      console.log(`CONN_UPDATE: status=${connection}, qr=${!!newQr}`);
 
-        const reasonString = lastDisconnect?.error?.message || 'Unknown Disconnect';
-        state.lastDisconnect = { reason: `Error: ${reasonString}`, date: new Date().toISOString() };
+      if (newQr) {
+          state.qr = await qr.toDataURL(newQr);
+          if (state.status !== 'connected') {
+              // Only go to connecting if we aren't already connected
+              state.status = 'connecting';
+          }
+      }
 
-        // Reconnect automatically for all reasons except an explicit logout
-        // Avoid reconnect loop if our session was replaced elsewhere (code 440)
-        const shouldReconnect = code !== DisconnectReason.loggedOut && code !== DisconnectReason.connectionReplaced;
+      if (connection === 'open') {
+          clearTimeout(connectTimeoutTimer);
+          state.status = 'connected';
+          state.qr = null;
+          state.connectingSince = null;
+          state.account = { id: sock.user!.id, name: sock.user!.name || 'N/A' };
+          console.log('CONN_UPDATE: Connection opened successfully.');
+      }
 
-        if (shouldReconnect) {
-            console.log(`CONN_UPDATE: Connection closed (code=${code}). Attempting automatic reconnect...`);
-            // Notify UI that we're attempting to restore the session
-            state.status = 'connecting';
-            state.sock = null;
-            state.account = null;
-            // Give WhatsApp a short breather before trying again
-            setTimeout(() => {
-                init().catch((err) => console.error('Re-init failed:', err));
-            }, 1000);
-        } else {
-            console.log(`CONN_UPDATE: Logged out by user/device (code=${code}). Waiting for QR rescan.`);
-            state.status = 'disconnected';
-            state.sock = null;
-            state.account = null;
-        }
-    }
-  });
+      if (connection === 'close') {
+          clearTimeout(connectTimeoutTimer);
+          const code = (lastDisconnect?.error as Boom | undefined)?.output?.statusCode;
+          // Cleanly remove all listeners from this socket to avoid duplicate events during reconnect
+          try {
+              // removeAllListeners typing mismatch in Baileys; cast to any to avoid TS error
+              (sock.ev as any).removeAllListeners();
+          } catch (_) {/* ignore */}
+
+          const reasonString = lastDisconnect?.error?.message || 'Unknown Disconnect';
+          state.lastDisconnect = { reason: `Error: ${reasonString}`, date: new Date().toISOString() };
+
+          // Reconnect automatically for all reasons except an explicit logout
+          // Avoid reconnect loop if our session was replaced elsewhere (code 440)
+          const shouldReconnect = code !== DisconnectReason.loggedOut && code !== DisconnectReason.connectionReplaced;
+
+          if (shouldReconnect) {
+              console.log(`CONN_UPDATE: Connection closed (code=${code}). Attempting automatic reconnect...`);
+              // Notify UI that we're attempting to restore the session
+              state.status = 'connecting';
+              state.sock = null;
+              state.account = null;
+              // Give WhatsApp a short breather before trying again
+              setTimeout(() => {
+                  init().catch((err) => console.error('Re-init failed:', err));
+              }, 1000);
+          } else {
+              console.log(`CONN_UPDATE: Logged out by user/device (code=${code}). Waiting for QR rescan.`);
+              state.status = 'disconnected';
+              state.sock = null;
+              state.account = null;
+              state.connectingSince = null;
+          }
+      }
+    });
+  } catch (error) {
+    console.error('INIT: Failed to establish connection', error);
+    state.sock = null;
+    state.status = 'error';
+    state.connectingSince = null;
+  }
 }
 
 // ----------------- Watchdog & Auto-Init -----------------
@@ -398,6 +429,20 @@ const isBuilding = process.env.NEXT_PHASE === 'phase-production-build';
 
 if (!global.whatsappWatchdog && !isBuilding) {
     global.whatsappWatchdog = setInterval(() => {
+        const stuckConnecting = state.sock && state.status === 'connecting'
+            && state.connectingSince !== null
+            && Date.now() - state.connectingSince > CONNECT_TIMEOUT_MS;
+
+        if (stuckConnecting) {
+            // init()'s own CONNECT_TIMEOUT_MS timer should already have torn this
+            // down; this is the fallback in case that timer was itself lost (e.g.
+            // dev-mode hot reload). Force it closed via end() so it goes through
+            // the normal connection.update('close') cleanup + reconnect path.
+            console.warn('WATCHDOG: Connection stale in "connecting" state, forcing teardown...');
+            state.sock!.end(new Error('Watchdog: stale connecting state'));
+            return;
+        }
+
         if (!state.sock || state.status !== 'connected') {
             console.warn('WATCHDOG: Socket not connected, attempting re-init...');
             init().catch(err => console.error('WATCHDOG: Re-init failed', err));
@@ -417,6 +462,7 @@ export function getClientState() {
     qr: state.qr,
     account: state.account,
     lastDisconnect: state.lastDisconnect,
+    connectingSince: state.connectingSince,
   };
 }
 
