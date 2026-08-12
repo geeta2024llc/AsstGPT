@@ -35,14 +35,20 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     const backendUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-    if (!backendUrl) return [];
+    if (!backendUrl) return { beforeFiles: [] };
     const target = backendUrl.startsWith('http') ? backendUrl : `https://${backendUrl}`;
-    return [
-      {
-        source: '/api/:path*',
-        destination: `${target}/api/:path*`,
-      },
-    ];
+    // Must run as `beforeFiles`: this codebase's own build also contains local
+    // /api/* route handlers, which would otherwise shadow the proxy to the
+    // Railway backend (default array-form rewrites only run `afterFiles`,
+    // i.e. after local filesystem routes are already checked and matched).
+    return {
+      beforeFiles: [
+        {
+          source: '/api/:path*',
+          destination: `${target}/api/:path*`,
+        },
+      ],
+    };
   },
   webpack: (config, {isServer}) => {
     if (!isServer) {

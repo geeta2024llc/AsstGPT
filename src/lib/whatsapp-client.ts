@@ -346,10 +346,11 @@ export async function init() {
     // stuck at 'connecting' forever (that state previously made the watchdog's
     // recovery attempts permanently no-ops, since init() bails out whenever
     // state.sock is set).
-    const connectTimeoutTimer = setTimeout(() => {
+    const armConnectTimeout = () => setTimeout(() => {
         console.warn(`INIT: Connection did not open within ${CONNECT_TIMEOUT_MS}ms, forcing teardown...`);
         sock.end(new Error('Connect timeout: no open/close event received'));
     }, CONNECT_TIMEOUT_MS);
+    let connectTimeoutTimer = armConnectTimeout();
 
     // Attach event listeners
     sock.ev.on('creds.update', saveCreds);
@@ -370,6 +371,14 @@ export async function init() {
               // Only go to connecting if we aren't already connected
               state.status = 'connecting';
           }
+          // A QR was successfully issued, proving the socket is alive (not a
+          // zombie handshake). Re-arm the teardown timer from this point so the
+          // user gets a full CONNECT_TIMEOUT_MS window to scan it, instead of
+          // being judged against a clock that started when init() first ran
+          // (before this QR — or any QR — existed).
+          clearTimeout(connectTimeoutTimer);
+          state.connectingSince = Date.now();
+          connectTimeoutTimer = armConnectTimeout();
       }
 
       if (connection === 'open') {
