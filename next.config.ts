@@ -1,7 +1,20 @@
 import type {NextConfig} from 'next';
 
+// Vercel sets VERCEL=1 automatically on every build it runs. Its builder
+// produces its own optimized serverless-function output and does not consume
+// `.next/standalone` — leaving `output: 'standalone'` enabled there has been
+// observed to interfere with Vercel's route/function detection, silently
+// dropping API routes (404) even on an otherwise "successful" build. Railway
+// (no VERCEL env var) still needs it: the Dockerfile copies
+// `.next/standalone` directly.
+const isVercelBuild = !!process.env.VERCEL;
+
+// Safe build-time diagnostic: confirms whether the backend proxy target is
+// configured, without ever printing its value.
+console.log(`[next.config] NEXT_PUBLIC_API_BASE_URL present at build: ${!!process.env.NEXT_PUBLIC_API_BASE_URL}`);
+
 const nextConfig: NextConfig = {
-  output: 'standalone',
+  output: isVercelBuild ? undefined : 'standalone',
   serverExternalPackages: ['@whiskeysockets/baileys', 'ws', 'bufferutil', 'utf-8-validate'],
   /* config options here */
   typescript: {
