@@ -47,6 +47,14 @@ interface WhatsAppClientState {
   account: { id: string; name: string } | null;
   lastDisconnect: { reason: string; date: string } | null;
   connectingSince: number | null;
+  // Set synchronously (before any await) at the top of init() so a second
+  // concurrent call — from the watchdog, from POST /api/whatsapp/init, or
+  // from a reconnect — cannot slip past the `state.sock` guard during the
+  // real I/O gap (useMultiFileAuthState + fetchLatestBaileysVersion) before
+  // state.sock is actually assigned. Without this, two live Baileys sockets
+  // could exist against the same auth directory at once, racing to write
+  // credentials/keys during an active pairing handshake.
+  initializing: boolean;
 }
 
 // If a connection attempt hasn't opened (or closed) within this window, treat the
@@ -70,6 +78,7 @@ if (!global.whatsappState) {
         account: null,
         lastDisconnect: null,
         connectingSince: null,
+        initializing: false,
     };
 }
 
@@ -310,11 +319,20 @@ export async function init() {
   // If a connection is already open or in progress, do nothing.
   // The UI should call logout() first if it wants a fresh start.
   // If a socket connection already exists, avoid creating another.
-  if (state.sock) {
+  //
+  // `state.initializing` is set synchronously below, before any await, so it
+  // closes the race that `state.sock` alone cannot: state.sock is only
+  // assigned after two real I/O operations (useMultiFileAuthState,
+  // fetchLatestBaileysVersion), and a second init() call — from the
+  // watchdog, from POST /api/whatsapp/init, or from a reconnect — landing in
+  // that gap would previously slip past the state.sock check and create a
+  // second live Baileys socket against the same auth directory.
+  if (state.sock || state.initializing) {
     console.log(`INIT: Skipped, current status is "${state.status}"`);
     return;
   }
-  
+  state.initializing = true;
+
   console.log('INIT: Starting connection process...');
   state.status = 'connecting';
   state.connectingSince = Date.now();
@@ -339,6 +357,9 @@ export async function init() {
     });
 
     state.sock = sock;
+    // The socket now exists, so the `state.sock` check in the guard above is
+    // sufficient on its own again; release the synchronous guard.
+    state.initializing = false;
 
     // Belt-and-suspenders on top of connectTimeoutMs: if the connection hasn't
     // reached 'open' (or 'close') within CONNECT_TIMEOUT_MS, force it closed so
@@ -362,8 +383,29 @@ export async function init() {
     });
 
     sock.ev.on('connection.update', async (update) => {
-      const { connection, lastDisconnect, qr: newQr } = update;
+      const { connection, lastDisconnect, qr: newQr, isNewLogin, receivedPendingNotifications } = update;
       console.log(`CONN_UPDATE: status=${connection}, qr=${!!newQr}`);
+
+      // Structured, secret-free diagnostic snapshot of the QR-scan -> paired
+      // transition. Never logs QR contents, credentials, or phone numbers —
+      // only connection-state metadata and, on close, the disconnect's real
+      // Boom status code/name so a genuine WhatsApp-side rejection can be
+      // told apart from our own synthetic connect-timeout teardown (which
+      // surfaces as a plain Error with no statusCode, i.e. disconnectStatusCode: null).
+      const disconnectErr = lastDisconnect?.error as (Boom | Error | undefined);
+      const disconnectStatusCode = (disconnectErr as Boom | undefined)?.output?.statusCode ?? null;
+      const selfInflicted = disconnectErr?.message === 'Connect timeout: no open/close event received'
+        || disconnectErr?.message === 'Watchdog: stale connecting state';
+      console.log('CONN_DIAGNOSTIC ' + JSON.stringify({
+        connection: connection ?? null,
+        hasQr: !!newQr,
+        isNewLogin: isNewLogin ?? null,
+        receivedPendingNotifications: receivedPendingNotifications ?? null,
+        disconnectStatusCode,
+        disconnectErrorName: disconnectErr?.name ?? null,
+        disconnectErrorMessage: disconnectErr?.message ?? null,
+        selfInflictedTimeout: selfInflicted,
+      }));
 
       if (newQr) {
           state.qr = await qr.toDataURL(newQr);
@@ -430,6 +472,7 @@ export async function init() {
     state.sock = null;
     state.status = 'error';
     state.connectingSince = null;
+    state.initializing = false;
   }
 }
 
