@@ -468,7 +468,22 @@ export async function init() {
                   init().catch((err) => console.error('Re-init failed:', err));
               }, 1000);
           } else {
-              console.log(`CONN_UPDATE: Logged out by user/device (code=${code}). Waiting for QR rescan.`);
+              // code is loggedOut (401) or connectionReplaced (440): WhatsApp has
+              // invalidated this session server-side. The credentials on disk are
+              // now dead, but useMultiFileAuthState would happily keep reading and
+              // reusing them on every future init() call (including the watchdog's
+              // periodic retries) — Baileys only generates a fresh QR when there
+              // are no existing credentials, so without deleting them here every
+              // subsequent connection attempt repeats the exact same 401/440
+              // rejection forever and a real QR is never shown again. Reproduced
+              // locally: confirmed this looped indefinitely every ~30s until this
+              // cleanup was added.
+              console.log(`CONN_UPDATE: Logged out by user/device (code=${code}). Clearing stale session and waiting for fresh QR rescan.`);
+              try {
+                  await fs.rm(WHATSAPP_AUTH_DIR, { recursive: true, force: true });
+              } catch (e) {
+                  console.error('CONN_UPDATE: Failed to clear stale session directory.', e);
+              }
               state.status = 'disconnected';
               state.sock = null;
               state.account = null;
