@@ -61,7 +61,16 @@ interface WhatsAppClientState {
 // socket as a zombie and force it closed rather than waiting indefinitely on a
 // close event that may never arrive (e.g. a network path that silently
 // black-holes the WebSocket instead of erroring).
-const CONNECT_TIMEOUT_MS = 45_000;
+//
+// Raised from 45s to 120s based on production CONN_DIAGNOSTIC evidence: every
+// observed teardown had selfInflictedTimeout: true and disconnectStatusCode:
+// null — WhatsApp never once sent a real rejection code, we simply killed the
+// socket first. Baileys also never emitted a second QR before the old 45s
+// timer expired, so a real human scanning a freshly-displayed QR (unlock
+// phone, open WhatsApp, navigate to Linked Devices, scan) routinely did not
+// finish in time. 120s comfortably covers that without meaningfully
+// delaying detection of an actually-dead socket.
+const CONNECT_TIMEOUT_MS = 120_000;
 
 // Use a simple global object for state management in Next.js dev environment
 declare global {
