@@ -100,6 +100,12 @@ const convoChartConfig = {
   },
 };
 
+const errorChartConfig = {
+  value: {
+    label: 'Errors',
+  },
+};
+
 export default function DashboardPage() {
   const [whatsAppState, setWhatsAppState] = useState<WhatsAppState | null>(null);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
@@ -470,27 +476,25 @@ export default function DashboardPage() {
           <CardContent>
             {analytics?.errorAnalytics.byCategory && analytics.errorAnalytics.byCategory.length > 0 ? (
               <div className="space-y-4">
-                <div className="h-[150px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <ChartTooltip content={<ChartTooltipContent hideLabel />} />
-                      <Pie
-                        data={analytics.errorAnalytics.byCategory}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={40}
-                        outerRadius={65}
-                        strokeWidth={2}
-                      >
-                        {analytics.errorAnalytics.byCategory.map((entry) => (
-                          <Cell key={`cell-${entry.name}`} fill={entry.fill} className="stroke-background hover:opacity-80" />
-                        ))}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
+                <ChartContainer config={errorChartConfig} className="h-[150px] w-full">
+                  <PieChart>
+                    <ChartTooltip content={<ChartTooltipContent hideLabel />} />
+                    <Pie
+                      data={analytics.errorAnalytics.byCategory}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={40}
+                      outerRadius={65}
+                      strokeWidth={2}
+                    >
+                      {analytics.errorAnalytics.byCategory.map((entry) => (
+                        <Cell key={`cell-${entry.name}`} fill={entry.fill} className="stroke-background hover:opacity-80" />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ChartContainer>
 
                 <div className="space-y-1.5 text-xs">
                   {analytics.errorAnalytics.byCategory.map((err) => (

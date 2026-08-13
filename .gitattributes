@@ -1,0 +1,7 @@
+# Shell scripts and Docker-related config must always keep LF line endings —
+# CRLF silently breaks a Linux container's shebang parsing (e.g.
+# "docker-entrypoint.sh: not found" with no other explanation), and this repo
+# is edited on Windows with core.autocrlf=true.
+*.sh text eol=lf
+Dockerfile text eol=lf
+Caddyfile text eol=lf

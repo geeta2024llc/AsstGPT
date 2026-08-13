@@ -287,6 +287,26 @@ async function handleMessage(msg: WAMessage) {
 }
 
 /**
+ * Safely clears all auth state files inside WHATSAPP_AUTH_DIR.
+ * Deletes file contents instead of deleting the directory itself, because when
+ * WHATSAPP_AUTH_DIR is a mounted Docker volume (e.g. on Railway), rmdir on the
+ * mount point fails with EACCES / EBUSY.
+ */
+async function clearAuthDirectory() {
+  try {
+    const files = await fs.readdir(WHATSAPP_AUTH_DIR);
+    for (const file of files) {
+      await fs.rm(path.join(WHATSAPP_AUTH_DIR, file), { recursive: true, force: true });
+    }
+    console.log('LOGOUT: Session directory contents cleared.');
+  } catch (e: any) {
+    if (e?.code !== 'ENOENT') {
+      console.error('LOGOUT: Error clearing session directory contents.', e);
+    }
+  }
+}
+
+/**
  * Forcefully disconnects, cleans up listeners, and deletes session files.
  * This is the "nuke" option for a guaranteed clean slate.
  */
@@ -306,12 +326,7 @@ export async function logout() {
     }
   }
   
-  try {
-    await fs.rm(WHATSAPP_AUTH_DIR, { recursive: true, force: true });
-    console.log('LOGOUT: Session directory deleted.');
-  } catch (e) {
-    console.error('LOGOUT: Error deleting session directory.', e);
-  }
+  await clearAuthDirectory();
 
   // Reset in-memory state
   state.status = 'disconnected';
@@ -479,11 +494,7 @@ export async function init() {
               // locally: confirmed this looped indefinitely every ~30s until this
               // cleanup was added.
               console.log(`CONN_UPDATE: Logged out by user/device (code=${code}). Clearing stale session and waiting for fresh QR rescan.`);
-              try {
-                  await fs.rm(WHATSAPP_AUTH_DIR, { recursive: true, force: true });
-              } catch (e) {
-                  console.error('CONN_UPDATE: Failed to clear stale session directory.', e);
-              }
+              await clearAuthDirectory();
               state.status = 'disconnected';
               state.sock = null;
               state.account = null;
