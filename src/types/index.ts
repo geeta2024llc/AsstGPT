@@ -1,3 +1,155 @@
+export type UserRole = 'owner' | 'admin' | 'agent' | 'member' | 'viewer';
+export type UserStatus = 'online' | 'away' | 'offline';
+
+export interface TeamMember {
+  id: string;
+  fullName: string;
+  email?: string;
+  avatarUrl?: string;
+  role: UserRole;
+  status?: UserStatus;
+  assignedQueues?: string[];
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export type HandoffRuleType = 'confidence_threshold' | 'intent_detected' | 'keyword_match' | 'consecutive_fallback';
+
+export interface HandoffCondition {
+  threshold?: number; // 0.0 to 1.0 (e.g. 0.65)
+  intents?: string[]; // e.g. ['human_agent_request', 'complaint', 'billing_refund', 'cancellation']
+  keywords?: string[]; // e.g. ['human', 'agent', 'operator', 'representative', 'urgent']
+  maxFallbacks?: number; // consecutive unanswered / low confidence count
+}
+
+export interface HandoffAction {
+  assignToUserId?: string;
+  autoPauseAi: boolean;
+  transitionMessage?: string;
+  notificationType?: 'in_app' | 'email' | 'none';
+}
+
+export interface HandoffRule {
+  id: string;
+  name: string;
+  description: string;
+  isEnabled: boolean;
+  ruleType: HandoffRuleType;
+  conditions: HandoffCondition;
+  actions: HandoffAction;
+  priority: number;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export interface HandoffEvaluationResult {
+  shouldHandoff: boolean;
+  matchedRule?: HandoffRule;
+  confidence?: number;
+  detectedIntent?: string;
+  reason?: string;
+  transitionMessage?: string;
+}
+
+export interface CannedResponse {
+  id: string;
+  title: string;
+  shortcut: string; // e.g. "intro", "pricing", "hours"
+  content: string;
+  category?: string;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export interface ConversationNote {
+  id: string;
+  chatId: string;
+  userId?: string;
+  userName: string;
+  userAvatar?: string;
+  content: string;
+  createdAt: number;
+}
+
+export type WebhookEventType =
+  | 'handoff.triggered'
+  | 'conversation.resolved'
+  | 'conversation.reopened'
+  | 'contact.stage_changed'
+  | 'message.received'
+  | 'note.created';
+
+export interface WebhookConfig {
+  id: string;
+  name: string;
+  url: string;
+  secret: string;
+  events: WebhookEventType[];
+  isActive: boolean;
+  createdAt: number;
+  updatedAt?: number;
+  lastTriggeredAt?: number;
+  lastStatusCode?: number;
+  failureCount: number;
+}
+
+export interface WebhookPayload<T = any> {
+  id: string;
+  event: WebhookEventType;
+  timestamp: number;
+  tenantId: string;
+  data: T;
+}
+
+export type LeadStage = 'lead' | 'prospect' | 'customer' | 'vip' | 'churned';
+
+export interface ContactProfile {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  phone?: string;
+  email?: string;
+  company?: string;
+  stage: LeadStage;
+  tags: string[];
+  notes?: string;
+  customAttributes?: Record<string, any>;
+  createdAt: number;
+  updatedAt?: number;
+  messageCount?: number;
+}
+
+export type SentimentType = 'positive' | 'neutral' | 'negative' | 'frustrated';
+
+export interface WidgetConfig {
+  title: string;
+  primaryColor: string;
+  greeting: string;
+  botAvatar: string;
+  botName?: string;
+  placeholder?: string;
+  allowedOrigins?: string[];
+}
+
+export interface SLAMetrics {
+  avgFirstResponseTimeMs: number;
+  avgResolutionDurationMs: number;
+  totalResolved: number;
+  sentimentBreakdown: {
+    positive: number;
+    neutral: number;
+    negative: number;
+    frustrated: number;
+  };
+  agentLeaderboard: {
+    userId: string;
+    fullName: string;
+    avatarUrl?: string;
+    conversationsHandled: number;
+    avgResolutionTimeMs: number;
+  }[];
+}
+
 export interface Conversation {
   id: string; // e.g., '1234567890@s.whatsapp.net'
   name: string;
@@ -9,7 +161,27 @@ export interface Conversation {
   avatar: string;
   /** Agent currently assigned to this conversation */
   assignedAgentId?: string;
+  /** Human takeover / manual pause status */
+  isBotPaused?: boolean;
+  /** Human team member assigned to this conversation */
+  assignedUserId?: string;
+  assignedUser?: TeamMember;
+  /** Reason why handoff occurred */
+  handoffReason?: string;
+  handoffMetadata?: Record<string, any>;
+  handoffAt?: number;
   status?: 'open' | 'resolved';
+  /** CRM fields */
+  contactId?: string;
+  stage?: LeadStage;
+  tags?: string[];
+  email?: string;
+  company?: string;
+  /** AI Summaries & Sentiment */
+  aiSummary?: string;
+  sentiment?: SentimentType;
+  firstResponseTimeMs?: number;
+  resolutionDurationMs?: number;
 }
 
 export interface Message {

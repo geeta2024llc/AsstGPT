@@ -17,6 +17,8 @@ import fs from 'fs/promises';
 import * as db from './db';
 import { generateAIResponse, retrieveRelevantKnowledgeContext, transcribeAudio, type MediaAttachment } from './ai';
 import { generateSpeechAudio } from './tts';
+import { evaluateHandoffRules, calculateAIConfidence } from './handoff-engine';
+import { dispatchWebhookEvent } from './webhook-dispatcher';
 import type { Message, Agent } from '@/types';
 
 const WHATSAPP_AUTH_DIR = path.join(process.cwd(), 'whatsapp-auth');
@@ -122,7 +124,7 @@ async function handleMessage(msg: WAMessage) {
           {},
           {
             logger: pino({ level: 'silent' }),
-            reuploadRequest: state.sock?.updateMediaMessage,
+            reuploadRequest: state.sock?.updateMediaMessage as any,
           }
         );
         const mimeType = msg.message.audioMessage.mimetype || 'audio/ogg';
@@ -150,7 +152,7 @@ async function handleMessage(msg: WAMessage) {
           {},
           {
             logger: pino({ level: 'silent' }),
-            reuploadRequest: state.sock?.updateMediaMessage,
+            reuploadRequest: state.sock?.updateMediaMessage as any,
           }
         );
         mediaAttachment = {
@@ -179,7 +181,7 @@ async function handleMessage(msg: WAMessage) {
           {},
           {
             logger: pino({ level: 'silent' }),
-            reuploadRequest: state.sock?.updateMediaMessage,
+            reuploadRequest: state.sock?.updateMediaMessage as any,
           }
         );
         mediaAttachment = {
@@ -249,23 +251,108 @@ async function handleMessage(msg: WAMessage) {
       type: 'info',
     });
 
+    dispatchWebhookEvent('message.received', {
+      id: message.id,
+      chatId: message.chatId,
+      senderName: message.senderName,
+      text: message.text,
+      mediaType: message.mediaType,
+      timestamp: message.timestamp,
+    }).catch(err => console.error('Webhook dispatch error:', err));
+
     // If message is from me, do not initiate automated agent response pipeline
     if (message.fromMe) return;
 
-    // 3. Agent Selection Logic
-    let agent: Agent | undefined;
+    // Auto-reopen conversation if it was previously marked resolved
     const convo = await db.getConversation(chatId);
-    if (convo && (convo.assignedAgentId === null || convo.assignedAgentId === '')) {
-      console.log(`[HANDOFF] Conversation ${chatId} is currently assigned to Human Operator. Skipping AI response.`);
+    if (convo?.status === 'resolved') {
+      await db.updateConversation(chatId, { status: 'open' });
       await db.addLog({
-        user: 'Human Operator',
+        user: 'System',
+        action: 'Conversation Reopened',
+        details: `Customer ${chatId} sent a new message. Conversation auto-reopened.`,
+        type: 'info',
+      });
+    }
+
+    // 3. Check Manual Pause / Human Takeover Mode
+    if (convo && (convo.isBotPaused || convo.assignedAgentId === null || convo.assignedAgentId === '')) {
+      console.log(`[HANDOFF] Conversation ${chatId} is in Human Takeover / Paused mode. Skipping AI response.`);
+      await db.addLog({
+        user: convo.assignedUserId ? `Assigned Agent (${convo.assignedUserId})` : 'Human Operator',
         action: 'AI Response Skipped',
-        details: `Conversation ${chatId} is in Human Takeover mode. AI auto-reply skipped.`,
+        details: `Conversation ${chatId} is in Human Takeover mode. Reason: ${convo.handoffReason || 'Manual takeover'}. AI auto-reply skipped.`,
         type: 'info',
       });
       return;
     }
 
+    // 4. Fetch Conversation History for Rule Evaluation & Context
+    const recentMessages = await db.getMessages(chatId);
+    const history = recentMessages
+      .filter(m => m.id !== providerMessageId)
+      .slice(-6)
+      .map(m => ({ fromMe: m.fromMe, text: m.text }));
+
+    // 5. Evaluate Automated Pre-Generation Handoff Rules (Keywords, Intents)
+    const preHandoff = await evaluateHandoffRules({
+      messageText: messageContent,
+      history,
+    });
+
+    if (preHandoff.shouldHandoff && preHandoff.matchedRule) {
+      const rule = preHandoff.matchedRule;
+      console.log(`[AUTOMATED HANDOFF] Handoff triggered for ${chatId} by rule "${rule.name}". Reason: ${preHandoff.reason}`);
+
+      await db.setConversationTakeover(
+        chatId,
+        true,
+        rule.actions.assignToUserId,
+        preHandoff.reason,
+        {
+          ruleId: rule.id,
+          ruleName: rule.name,
+          detectedIntent: preHandoff.detectedIntent,
+          triggeredAt: new Date().toISOString(),
+        }
+      );
+
+      dispatchWebhookEvent('handoff.triggered', {
+        chatId,
+        ruleId: rule.id,
+        ruleName: rule.name,
+        reason: preHandoff.reason,
+        assignedUserId: rule.actions.assignToUserId,
+        detectedIntent: preHandoff.detectedIntent,
+        timestamp: Date.now(),
+      }).catch(err => console.error('Webhook dispatch error:', err));
+
+      await db.addLog({
+        user: 'Handoff Engine',
+        action: 'Automated Handoff Triggered',
+        details: `Rule "${rule.name}" escalated conversation ${chatId}. ${preHandoff.reason}`,
+        type: 'warning',
+      });
+
+      if (rule.actions.transitionMessage) {
+        try {
+          await sendMessage(chatId, rule.actions.transitionMessage);
+          await db.addLog({
+            user: 'System',
+            action: 'Handoff Transition Message Sent',
+            details: rule.actions.transitionMessage,
+            type: 'info',
+          });
+        } catch (msgErr) {
+          console.error('Failed to send handoff transition message:', msgErr);
+        }
+      }
+
+      return;
+    }
+
+    // 6. Agent Selection Logic
+    let agent: Agent | undefined;
     if (convo?.assignedAgentId) {
       agent = await db.getAgent(convo.assignedAgentId);
     }
@@ -295,18 +382,14 @@ async function handleMessage(msg: WAMessage) {
       type: 'info',
     });
 
-    // 4. AI or Rule-Based Response Pipeline
+    // 7. AI or Rule-Based Response Pipeline
     let responseText: string | undefined;
+    let ragContextString = '';
 
     if (agent.mode === 'ai' && agent.aiSettings) {
       try {
-        const recentMessages = await db.getMessages(chatId);
-        const history = recentMessages
-          .filter(m => m.id !== providerMessageId)
-          .slice(-6)
-          .map(m => ({ fromMe: m.fromMe, text: m.text }));
-
         const { context: ragContext, sourcesUsed, chunkCount } = await retrieveRelevantKnowledgeContext(messageContent, agent.aiSettings.knowledgeFileIds);
+        ragContextString = ragContext;
         if (sourcesUsed.length > 0) {
           await db.addLog({
             user: agent.name,
@@ -333,6 +416,60 @@ async function handleMessage(msg: WAMessage) {
           details: (err as Error).message,
           type: 'error',
         });
+      }
+    }
+
+    // 8. Confidence Check & Low-Confidence Handoff Guardrail
+    if (responseText) {
+      const confidenceScore = calculateAIConfidence(responseText, messageContent, ragContextString);
+      const confHandoff = await evaluateHandoffRules({
+        messageText: messageContent,
+        history,
+        currentConfidence: confidenceScore,
+      });
+
+      if (confHandoff.shouldHandoff && confHandoff.matchedRule) {
+        const rule = confHandoff.matchedRule;
+        console.log(`[AUTOMATED HANDOFF] Low confidence handoff triggered for ${chatId}. Score: ${(confidenceScore * 100).toFixed(0)}%`);
+
+        await db.setConversationTakeover(
+          chatId,
+          true,
+          rule.actions.assignToUserId,
+          confHandoff.reason,
+          {
+            ruleId: rule.id,
+            ruleName: rule.name,
+            confidence: confidenceScore,
+            triggeredAt: new Date().toISOString(),
+          }
+        );
+
+        dispatchWebhookEvent('handoff.triggered', {
+          chatId,
+          ruleId: rule.id,
+          ruleName: rule.name,
+          reason: confHandoff.reason,
+          confidence: confidenceScore,
+          assignedUserId: rule.actions.assignToUserId,
+          timestamp: Date.now(),
+        }).catch(err => console.error('Webhook dispatch error:', err));
+
+        await db.addLog({
+          user: 'Handoff Engine',
+          action: 'Automated Handoff Triggered (Low Confidence)',
+          details: confHandoff.reason || `Low confidence score of ${(confidenceScore * 100).toFixed(0)}%`,
+          type: 'warning',
+        });
+
+        if (rule.actions.transitionMessage) {
+          try {
+            await sendMessage(chatId, rule.actions.transitionMessage);
+          } catch (sendErr) {
+            console.error('Failed to send low-confidence transition message:', sendErr);
+          }
+        }
+        return;
       }
     }
 

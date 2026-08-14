@@ -1,37 +1,68 @@
 import { NextResponse } from 'next/server';
-import { updateConversation, getAgents, addLog } from '@/lib/db';
+import { updateConversation, getAgents, addLog, getTeamMembers } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { chatId, mode } = body;
+    const { chatId, mode, isPaused, assignedUserId, reason } = body;
 
-    if (!chatId || !mode || (mode !== 'human' && mode !== 'ai')) {
-      return NextResponse.json({ message: 'Invalid payload. Required chatId and mode ("human" | "ai").' }, { status: 400 });
+    if (!chatId) {
+      return NextResponse.json({ message: 'Missing required field: chatId' }, { status: 400 });
     }
 
-    if (mode === 'human') {
-      await updateConversation(chatId, { assignedAgentId: '' });
+    const shouldPause = mode ? mode === 'human' : (isPaused ?? true);
+
+    if (shouldPause) {
+      const teamMembers = await getTeamMembers();
+      const assignedMember = assignedUserId ? teamMembers.find(m => m.id === assignedUserId) : undefined;
+      const memberName = assignedMember?.fullName || 'Human Operator';
+
+      await updateConversation(chatId, {
+        isBotPaused: true,
+        assignedUserId: assignedUserId || undefined,
+        handoffReason: reason || 'Manual human takeover activated from Inbox',
+        handoffAt: Date.now(),
+      });
+
       await addLog({
-        user: 'Admin',
+        user: memberName,
         action: 'Human Takeover Activated',
-        details: `Human operator took over conversation ${chatId}`,
+        details: `Human takeover activated for ${chatId}. Assigned to: ${memberName}`,
         type: 'info',
       });
-      return NextResponse.json({ success: true, mode: 'human' });
+
+      return NextResponse.json({
+        success: true,
+        mode: 'human',
+        isBotPaused: true,
+        assignedUserId: assignedUserId || null,
+      });
     } else {
       const agents = await getAgents();
       const activeAgent = agents.find(a => a.status === 'active') || agents[0];
-      await updateConversation(chatId, { assignedAgentId: activeAgent?.id || '' });
+
+      await updateConversation(chatId, {
+        isBotPaused: false,
+        assignedAgentId: activeAgent?.id || '',
+        handoffReason: undefined,
+        handoffAt: undefined,
+      });
+
       await addLog({
         user: 'Admin',
         action: 'AI Auto-Reply Resumed',
         details: `Returned conversation ${chatId} to AI agent "${activeAgent?.name || 'Default'}"`,
         type: 'info',
       });
-      return NextResponse.json({ success: true, mode: 'ai', agentId: activeAgent?.id });
+
+      return NextResponse.json({
+        success: true,
+        mode: 'ai',
+        isBotPaused: false,
+        agentId: activeAgent?.id,
+      });
     }
   } catch (error) {
     console.error('Failed to update conversation takeover status:', error);
