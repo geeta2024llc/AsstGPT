@@ -82,7 +82,7 @@ export async function classifyIntent(
 Customer Message: "${clean.slice(0, 300)}"
 Return ONLY the category name in lowercase with no extra text or explanation:`;
 
-    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`, {
+    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(3500),

@@ -315,37 +315,42 @@ export async function generateAIResponse(
 
         console.log('Gemini API request payload dispatches...');
         
-        let attempts = 0;
-        let data: any;
-        while (attempts < 3) {
-          attempts++;
-          const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody),
-          });
+        const geminiModels = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-8b'];
+        let lastError: any = null;
 
+        for (const model of geminiModels) {
           try {
-            data = await resp.json();
-          } catch (err) {
-            const raw = await resp.text();
-            console.error('Gemini API raw response (non-JSON):', raw);
-            throw new Error(`Gemini Non-JSON Response: ${raw.slice(0, 200)}`);
-          }
+            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(requestBody),
+            });
 
-          if (data.error && data.error.code === 429 && attempts < 3) {
-            console.warn(`[AI WARN] Gemini Rate Limit 429 hit. Retrying in 15s... (attempt ${attempts}/3)`);
-            await new Promise(r => setTimeout(r, 15000));
-            continue;
+            const data = await resp.json();
+
+            if (data.error) {
+              if (data.error.code === 429) {
+                console.warn(`[AI WARN] Gemini model "${model}" hit quota/rate-limit (429). Failing over to next model...`);
+                lastError = data.error;
+                continue;
+              }
+              throw new Error(`Gemini API Error (${model}): ${data.error.message} (code: ${data.error.code})`);
+            }
+
+            const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            if (candidateText) {
+              responseText = candidateText;
+              break;
+            }
+          } catch (err: any) {
+            lastError = err;
+            console.warn(`[AI WARN] Attempt with ${model} failed:`, err.message);
           }
-          break;
         }
-        
-        if (data.error) {
-          console.error('Gemini API Error details:', data.error);
-          throw new Error(`Gemini API Error: ${data.error.message} (code: ${data.error.code})`);
-        } else {
-          responseText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+
+        if (!responseText && lastError) {
+          console.error('Gemini API Error across all candidate models:', lastError);
+          throw new Error(`Gemini API Error: ${lastError.message || JSON.stringify(lastError)}`);
         }
         break;
       }
