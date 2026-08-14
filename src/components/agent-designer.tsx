@@ -43,9 +43,12 @@ import {
   FilePen,
   Bot,
   BookCopy,
+  Mic,
+  Eye,
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Switch } from '@/components/ui/switch';
 import { getAiSuggestions } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
 import type { AgentRule, KnowledgeFile } from '@/types';
@@ -79,6 +82,9 @@ export default function AgentDesigner({ agent, onSaved }: AgentDesignerProps) {
     maxLen: agent?.aiSettings?.maxLen ?? 500,
     temperature: agent?.aiSettings?.temperature ?? 0.2,
     knowledgeFileIds: Array.isArray(agent?.aiSettings?.knowledgeFileIds) ? [...agent.aiSettings.knowledgeFileIds] : [],
+    enableVoiceResponse: agent?.aiSettings?.enableVoiceResponse ?? false,
+    enableVision: agent?.aiSettings?.enableVision ?? true,
+    voiceProvider: (agent?.aiSettings?.voiceProvider ?? 'google') as 'google' | 'openai' | 'elevenlabs',
   });
   
   // Log initial AI settings
@@ -598,41 +604,47 @@ export default function AgentDesigner({ agent, onSaved }: AgentDesignerProps) {
               </FormItem>
             </div>
 
-            {/* Knowledge Files */}
-            <div className="space-y-2">
-              <FormLabel className="flex items-center gap-2"><BookCopy className="h-4 w-4" /> Knowledge Base Context</FormLabel>
-              {knowledgeFiles.length > 0 ? (
-                <ScrollArea className="h-40 rounded-md border p-2">
-                  <div className="space-y-2">
-                    {knowledgeFiles.map((file) => (
-                      <div key={file.id} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`ai-file-${file.id}`}
-                          checked={aiSettings.knowledgeFileIds?.includes(file.id) || false}
-                          onCheckedChange={(checked) => {
-                            setAISettings((s) => {
-                              const current = s.knowledgeFileIds || [];
-                              const newFileIds = checked
-                                ? [...current, file.id]
-                                : current.filter((id) => id !== file.id);
-                              console.log('Knowledge file IDs updated:', newFileIds);
-                              return {
-                                ...s,
-                                knowledgeFileIds: newFileIds,
-                              };
-                            });
-                          }}
-                        />
-                        <label htmlFor={`ai-file-${file.id}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                          {file.fileName}
-                        </label>
-                      </div>
-                    ))}
+            {/* Multimodal & Voice Features */}
+            <div className="space-y-4 rounded-lg border p-4 bg-muted/20">
+              <h4 className="font-semibold text-sm flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" /> Multimodal & Voice Features
+              </h4>
+              
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <Mic className="h-4 w-4 text-primary" />
+                    <FormLabel className="text-sm font-medium">Voice Responses (Text-to-Speech)</FormLabel>
                   </div>
-                </ScrollArea>
-              ) : (
-                <p className="py-4 text-center text-sm text-muted-foreground">No knowledge files uploaded yet.</p>
-              )}
+                  <p className="text-xs text-muted-foreground">
+                    Automatically reply with authentic WhatsApp voice notes when receiving audio messages or user inquiries.
+                  </p>
+                </div>
+                <Switch
+                  checked={aiSettings.enableVoiceResponse}
+                  onCheckedChange={(checked) => {
+                    setAISettings((s) => ({ ...s, enableVoiceResponse: checked }));
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <Eye className="h-4 w-4 text-primary" />
+                    <FormLabel className="text-sm font-medium">Vision & Document Understanding</FormLabel>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Allow the AI to inspect and understand customer images (receipts, error screenshots) and PDF documents.
+                  </p>
+                </div>
+                <Switch
+                  checked={aiSettings.enableVision}
+                  onCheckedChange={(checked) => {
+                    setAISettings((s) => ({ ...s, enableVision: checked }));
+                  }}
+                />
+              </div>
             </div>
           </CardContent>
         </Card>

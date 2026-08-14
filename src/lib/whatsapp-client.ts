@@ -7,6 +7,7 @@ import makeWASocket, {
   type WASocket,
   type WAMessage,
   isJidGroup,
+  downloadMediaMessage,
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import { Boom } from '@hapi/boom';
@@ -14,7 +15,8 @@ import qr from 'qrcode';
 import path from 'path';
 import fs from 'fs/promises';
 import * as db from './db';
-import { generateAIResponse, retrieveRelevantKnowledgeContext } from './ai';
+import { generateAIResponse, retrieveRelevantKnowledgeContext, transcribeAudio, type MediaAttachment } from './ai';
+import { generateSpeechAudio } from './tts';
 import type { Message, Agent } from '@/types';
 
 const WHATSAPP_AUTH_DIR = path.join(process.cwd(), 'whatsapp-auth');
@@ -101,9 +103,104 @@ async function handleMessage(msg: WAMessage) {
 
     const chatId = msg.key.remoteJid;
     const providerMessageId = msg.key.id;
-    const messageContent = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+    if (!providerMessageId) return;
 
-    if (!messageContent || !providerMessageId) return;
+    // Extract message content and media attachments
+    let messageContent = '';
+    let mediaAttachment: MediaAttachment | undefined;
+    let isVoiceNote = false;
+    let mediaType: 'text' | 'audio' | 'image' | 'document' = 'text';
+
+    if (msg.message.audioMessage) {
+      isVoiceNote = true;
+      mediaType = 'audio';
+      try {
+        console.log(`[MULTIMODAL] Downloading inbound voice note from ${chatId}...`);
+        const audioBuffer = await downloadMediaMessage(
+          msg,
+          'buffer',
+          {},
+          {
+            logger: pino({ level: 'silent' }),
+            reuploadRequest: state.sock?.updateMediaMessage,
+          }
+        );
+        const mimeType = msg.message.audioMessage.mimetype || 'audio/ogg';
+        const transcript = await transcribeAudio(audioBuffer as Buffer, mimeType);
+        messageContent = transcript ? `[Voice Note]: ${transcript}` : '[Voice Note] (audio received)';
+        await db.addLog({
+          user: 'System',
+          action: 'Voice Note Transcribed',
+          details: `From ${chatId}: ${transcript ? transcript.slice(0, 120) : 'empty/unintelligible'}`,
+          type: 'info',
+        });
+      } catch (audioErr) {
+        console.error('Audio transcription error:', audioErr);
+        messageContent = '[Voice Note] (audio transcription error)';
+      }
+    } else if (msg.message.imageMessage) {
+      mediaType = 'image';
+      const caption = msg.message.imageMessage.caption || '';
+      messageContent = caption ? `[Image]: ${caption}` : '[Image attached]';
+      try {
+        console.log(`[MULTIMODAL] Downloading inbound image from ${chatId}...`);
+        const imgBuffer = await downloadMediaMessage(
+          msg,
+          'buffer',
+          {},
+          {
+            logger: pino({ level: 'silent' }),
+            reuploadRequest: state.sock?.updateMediaMessage,
+          }
+        );
+        mediaAttachment = {
+          buffer: imgBuffer as Buffer,
+          mimeType: msg.message.imageMessage.mimetype || 'image/jpeg',
+        };
+        await db.addLog({
+          user: 'System',
+          action: 'Image Received',
+          details: `From ${chatId}: ${caption || 'No caption'} (${(mediaAttachment.buffer.length / 1024).toFixed(1)} KB)`,
+          type: 'info',
+        });
+      } catch (imgErr) {
+        console.error('Image download error:', imgErr);
+      }
+    } else if (msg.message.documentMessage) {
+      mediaType = 'document';
+      const fileName = msg.message.documentMessage.fileName || 'document';
+      const caption = msg.message.documentMessage.caption || '';
+      messageContent = `[Document: ${fileName}] ${caption}`.trim();
+      try {
+        console.log(`[MULTIMODAL] Downloading inbound document from ${chatId}: ${fileName}...`);
+        const docBuffer = await downloadMediaMessage(
+          msg,
+          'buffer',
+          {},
+          {
+            logger: pino({ level: 'silent' }),
+            reuploadRequest: state.sock?.updateMediaMessage,
+          }
+        );
+        mediaAttachment = {
+          buffer: docBuffer as Buffer,
+          mimeType: msg.message.documentMessage.mimetype || 'application/pdf',
+          fileName,
+        };
+        await db.addLog({
+          user: 'System',
+          action: 'Document Received',
+          details: `From ${chatId}: ${fileName} (${(mediaAttachment.buffer.length / 1024).toFixed(1)} KB)`,
+          type: 'info',
+        });
+      } catch (docErr) {
+        console.error('Document download error:', docErr);
+      }
+    } else {
+      messageContent = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+    }
+
+    if (!messageContent && !mediaAttachment) return;
 
     // 1. Idempotency Check: Skip duplicate events emitted by Baileys
     const isDuplicate = await db.hasMessage(providerMessageId);
@@ -117,7 +214,7 @@ async function handleMessage(msg: WAMessage) {
       return;
     }
 
-    // Derive a sensible sender name. Sometimes WhatsApp supplies pushName as a single '.' or empty string.
+    // Derive a sensible sender name.
     const rawName = (msg.pushName || '').trim();
     const senderName = rawName && rawName !== '.' ? rawName : chatId.split('@')[0];
 
@@ -128,6 +225,7 @@ async function handleMessage(msg: WAMessage) {
       text: messageContent,
       timestamp: (typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp : (msg.messageTimestamp as any)?.toNumber?.() || Date.now()/1000) * 1000,
       senderName,
+      mediaType,
     };
 
     // 2. Persist Inbound Message to Supabase (Atomic DB Idempotency)
@@ -218,7 +316,7 @@ async function handleMessage(msg: WAMessage) {
           });
         }
 
-        responseText = await generateAIResponse(messageContent, agent.aiSettings, history);
+        responseText = await generateAIResponse(messageContent, agent.aiSettings, history, mediaAttachment);
         if (responseText) {
           await db.addLog({
             user: agent.name,
@@ -256,14 +354,43 @@ async function handleMessage(msg: WAMessage) {
     }
 
     // 5. Send Outbound Response via WhatsApp & Persist to Supabase
+    // If incoming message was a voice note OR if agent has voice responses enabled, reply with voice note
+    const shouldSendVoice = (isVoiceNote || agent.aiSettings?.enableVoiceResponse) && !!responseText;
+
     try {
-      await sendMessage(chatId, responseText);
-      await db.addLog({
-        user: agent.name,
-        action: 'Auto-response Sent',
-        details: responseText.slice(0, 120),
-        type: 'success',
-      });
+      if (shouldSendVoice) {
+        console.log(`[MULTIMODAL] Generating voice note response for ${chatId}...`);
+        try {
+          const audioBuffer = await generateSpeechAudio(responseText, {
+            provider: agent.aiSettings?.voiceProvider,
+            voice: agent.aiSettings?.voiceName,
+          });
+          await sendVoiceNote(chatId, audioBuffer, responseText);
+          await db.addLog({
+            user: agent.name,
+            action: 'Auto-response Sent (Voice Note)',
+            details: responseText.slice(0, 120),
+            type: 'success',
+          });
+        } catch (ttsErr) {
+          console.warn('Voice response generation failed, falling back to text:', ttsErr);
+          await sendMessage(chatId, responseText);
+          await db.addLog({
+            user: agent.name,
+            action: 'Auto-response Sent (Text Fallback)',
+            details: responseText.slice(0, 120),
+            type: 'success',
+          });
+        }
+      } else {
+        await sendMessage(chatId, responseText);
+        await db.addLog({
+          user: agent.name,
+          action: 'Auto-response Sent',
+          details: responseText.slice(0, 120),
+          type: 'success',
+        });
+      }
     } catch (sendErr) {
       console.error('Failed to send auto-response:', sendErr);
       await db.addLog({
@@ -568,6 +695,7 @@ export async function sendMessage(to: string, text: string) {
         text: text,
         timestamp: Date.now(),
         senderName: 'Me',
+        mediaType: 'text',
     };
 
     await db.addMessage(message);
@@ -579,3 +707,35 @@ export async function sendMessage(to: string, text: string) {
 
     return result;
 }
+
+export async function sendVoiceNote(to: string, audioBuffer: Buffer, transcriptText?: string) {
+    if (!state.sock || state.status !== 'connected') {
+        throw new Error('WhatsApp client not connected.');
+    }
+    const sendResult = await state.sock.sendMessage(to, {
+        audio: audioBuffer,
+        mimetype: 'audio/mp4',
+        ptt: true,
+    });
+    const result = (Array.isArray(sendResult) ? sendResult[0] : sendResult) as any;
+
+    const message: Message = {
+        id: result.key.id!,
+        chatId: to,
+        fromMe: true,
+        text: transcriptText ? `[Voice Note]: ${transcriptText}` : '[Voice Note]',
+        timestamp: Date.now(),
+        senderName: 'Me',
+        mediaType: 'audio',
+    };
+
+    await db.addMessage(message);
+    await db.updateConversation(to, {
+        lastMessage: { text: message.text, timestamp: message.timestamp },
+        unreadCount: 0,
+    });
+    await db.incrementStat('sent');
+
+    return result;
+}
+

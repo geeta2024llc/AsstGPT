@@ -11,6 +11,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "tsx tests/run_all.ts",
+    "test:multimodal": "tsx tests/suites/multimodal.test.ts",
     "test:rag": "tsx tests/suites/rag_e2e.test.ts",
     "test:phase7": "tsx tests/suites/phase7_production.test.ts",
     "test:analytics": "tsx tests/suites/analytics.test.ts",

@@ -4,6 +4,7 @@ import { runAnalyticsTestSuite } from './suites/analytics.test';
 import { runAuditAnalyticsTest } from './suites/audit_analytics.test';
 import { runPipelineTest } from './suites/pipeline.test';
 import { runRagE2ETestSuite } from './suites/rag_e2e.test';
+import { runMultimodalTestSuite } from './suites/multimodal.test';
 
 interface SuiteResult {
   name: string;
@@ -17,6 +18,7 @@ async function runMasterTestSuite() {
   console.log('============================================================\n');
 
   const suites: Array<{ name: string; runner: () => Promise<boolean> }> = [
+    { name: 'Multimodal & Voice Processing', runner: runMultimodalTestSuite },
     { name: 'Synonyms & Keyword Retrieval', runner: runSynonymsTest },
     { name: 'Pipeline & Environment Check', runner: runPipelineTest },
     { name: 'Analytics & DB Query Verification', runner: runAnalyticsTestSuite },

@@ -19,6 +19,8 @@ export interface Message {
   text: string;
   timestamp: number;
   senderName?: string;
+  mediaType?: 'text' | 'audio' | 'image' | 'document';
+  mediaCaption?: string;
 }
 
 export interface AgentRule {
@@ -42,6 +44,10 @@ export interface AISettings {
   systemPrompt: string;
   maxLen: number; // approximate max character or token length
   temperature: number; // 0-1 creativity
+  enableVoiceResponse?: boolean; // Reply with synthetic voice notes when receiving voice notes or always
+  voiceProvider?: 'google' | 'openai' | 'elevenlabs';
+  voiceName?: string;
+  enableVision?: boolean; // Enable inspection of incoming images and PDF documents
 }
 
 export type AgentMode = 'rule' | 'ai';

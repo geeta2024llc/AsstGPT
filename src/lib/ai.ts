@@ -102,17 +102,77 @@ export async function retrieveRelevantKnowledgeContext(
   return { context, sourcesUsed, chunkCount: finalFiles.length };
 }
 
+export interface MediaAttachment {
+  buffer: Buffer;
+  mimeType: string;
+  fileName?: string;
+}
+
 /**
- * Generates an AI response using the provided settings, incoming user text, and conversation history.
+ * Transcribes an audio note / voice message using Google Gemini Multimodal Audio.
+ */
+export async function transcribeAudio(
+  audioBuffer: Buffer,
+  mimeType = 'audio/ogg',
+  customApiKey?: string
+): Promise<string> {
+  const apiKey = customApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY || process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY is missing in process.env for audio transcription.');
+  }
+
+  // Normalize mime type (strip codec parameters like ; codecs=opus)
+  const cleanMime = mimeType.split(';')[0].trim() || 'audio/ogg';
+  const base64Audio = audioBuffer.toString('base64');
+
+  const requestBody = {
+    contents: [{
+      parts: [
+        {
+          inline_data: {
+            mime_type: cleanMime,
+            data: base64Audio,
+          }
+        },
+        {
+          text: 'Transcribe the spoken words in this audio exactly as said. If the speaker is using Nepali (Devanagari or Romanized), English, or mixed English-Nepali, transcribe accurately in the spoken language. Return ONLY the transcribed text with no extra conversational remarks, formatting, or quotation marks.'
+        }
+      ]
+    }],
+    generationConfig: {
+      temperature: 0.2,
+      maxOutputTokens: 300,
+    }
+  };
+
+  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody),
+  });
+
+  const data = await resp.json();
+  if (data.error) {
+    throw new Error(`Gemini Audio Transcription Error: ${data.error.message} (code: ${data.error.code})`);
+  }
+
+  const transcript = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+  return transcript;
+}
+
+/**
+ * Generates an AI response using the provided settings, incoming user text, conversation history, and optional media attachment.
  */
 export async function generateAIResponse(
   userText: string,
   settings: AISettings,
-  conversationHistory?: Array<{ fromMe: boolean; text: string }>
+  conversationHistory?: Array<{ fromMe: boolean; text: string }>,
+  mediaAttachment?: MediaAttachment
 ): Promise<string> {
   console.log('=== AI RESPONSE GENERATION START ===');
   console.log('User text:', userText);
   console.log('History turns count:', conversationHistory?.length || 0);
+  console.log('Media attachment:', mediaAttachment ? `${mediaAttachment.mimeType} (${mediaAttachment.buffer.length} bytes)` : 'none');
   console.log('Settings:', JSON.stringify({ ...settings, apiKey: settings.apiKey ? '[REDACTED]' : undefined }, null, 2));
   
   const provider: AIProvider = settings.provider || 'gemini';
@@ -142,7 +202,7 @@ export async function generateAIResponse(
 
     switch (provider) {
       case 'openai': {
-        const messages: Array<{ role: string; content: string }> = [
+        const messages: Array<{ role: string; content: any }> = [
           { role: 'system', content: systemPrompt }
         ];
         
@@ -162,7 +222,23 @@ export async function generateAIResponse(
           }
         }
         
-        messages.push({ role: 'user', content: userText });
+        if (mediaAttachment && mediaAttachment.mimeType.startsWith('image/')) {
+          const base64 = mediaAttachment.buffer.toString('base64');
+          messages.push({
+            role: 'user',
+            content: [
+              { type: 'text', text: userText || 'Please inspect this image.' },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${mediaAttachment.mimeType};base64,${base64}`,
+                },
+              },
+            ],
+          });
+        } else {
+          messages.push({ role: 'user', content: userText });
+        }
         
         console.log('OpenAI API request dispatches with max_tokens:', settings.maxLen);
         
@@ -173,7 +249,7 @@ export async function generateAIResponse(
             'Authorization': `Bearer ${apiKey}`,
           },
           body: JSON.stringify({
-            model: 'gpt-3.5-turbo',
+            model: mediaAttachment ? 'gpt-4o-mini' : 'gpt-3.5-turbo',
             messages: messages,
             max_tokens: Math.min(Math.floor((settings.maxLen || 300) / 4), 500),
             temperature: settings.temperature || 0.7,
@@ -191,6 +267,7 @@ export async function generateAIResponse(
         const qualityInstruction = `Strict Communication Guidelines:
 - Language: Always match the customer's language exactly (English, Nepali Devanagari, or Romanized/Mixed Nepali).
 - Tone & Format: Be polite, concise, clear, and professional. Format for WhatsApp (short paragraphs, max 3-4 sentences).
+- Vision & Document Understanding: When an image or document is attached, analyze it carefully (e.g. read receipt details, error messages, item names, prices, dates) and reference those observations in your answer.
 - Knowledge-First Accuracy: When a [Reference Knowledge Base] is provided, use ONLY that information to answer business-specific questions about prices, hours, policies, services, and contact details. Do NOT add, invent, or extrapolate any business facts not explicitly stated in the knowledge base.
 - Anti-Hallucination: If specific business information is NOT present in the provided knowledge base, respond with: "I'm sorry, that information is not currently available. Please contact us directly for assistance." Do NOT guess or make up any business facts.
 - General Conversation: For casual greetings or general conversational messages (hi, hello, how are you, etc.), respond naturally without requiring a knowledge-base match.
@@ -210,11 +287,25 @@ export async function generateAIResponse(
           combinedPrompt += `\n\n[Recent Conversation Context]:\n${formattedHistory}`;
         }
 
-        combinedPrompt += `\n\n[Customer Query]: ${userText}\n\n[Assistant Response]:`;
+        combinedPrompt += `\n\n[Customer Query / Caption]: ${userText || '(User sent media attachment without caption)'}\n\n[Assistant Response]:`;
+
+        const geminiParts: any[] = [];
+
+        if (mediaAttachment) {
+          const cleanMime = mediaAttachment.mimeType.split(';')[0].trim();
+          geminiParts.push({
+            inline_data: {
+              mime_type: cleanMime,
+              data: mediaAttachment.buffer.toString('base64'),
+            },
+          });
+        }
+
+        geminiParts.push({ text: combinedPrompt });
 
         const requestBody = {
           contents: [{
-            parts: [{ text: combinedPrompt }]
+            parts: geminiParts
           }],
           generationConfig: {
             maxOutputTokens: settings.maxLen || 300,
