@@ -9,7 +9,16 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx tests/run_all.ts",
+    "test:rag": "tsx tests/suites/rag_e2e.test.ts",
+    "test:phase7": "tsx tests/suites/phase7_production.test.ts",
+    "test:analytics": "tsx tests/suites/analytics.test.ts",
+    "test:realworld": "tsx tests/suites/realworld_scenarios.test.ts",
+    "test:synonyms": "tsx tests/suites/synonyms.test.ts",
+    "db:migrate": "tsx scripts/db/apply_migrations.ts",
+    "db:seed": "tsx scripts/db/seed_db.ts",
+    "db:check": "tsx scripts/db/check_db.ts"
   },
   "dependencies": {
     "@genkit-ai/googleai": "^1.13.0",

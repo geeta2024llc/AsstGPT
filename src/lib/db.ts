@@ -105,12 +105,14 @@ export async function getConversations(): Promise<Conversation[]> {
 
     if (!convosData) return [];
 
-    const conversations: Conversation[] = convosData.map((c: any) => {
-      const contact = c.contacts;
+    const conversationsMap = new Map<string, Conversation>();
+
+    for (const c of convosData) {
+      const contact = c.contacts as any;
       const externalId = contact?.contact_channels?.[0]?.external_id || contact?.name || c.id;
       const lastMsgTime = c.last_message_at ? new Date(c.last_message_at).getTime() : Date.now();
 
-      return {
+      const convoObj: Conversation = {
         id: externalId,
         name: contact?.name || externalId.split('@')[0],
         unreadCount: c.unread_count || 0,
@@ -121,8 +123,14 @@ export async function getConversations(): Promise<Conversation[]> {
         avatar: contact?.avatar_url || `https://placehold.co/100x100.png?text=${(contact?.name || externalId.charAt(0)).toUpperCase()}`,
         assignedAgentId: c.assigned_agent_id || undefined,
       };
-    });
 
+      const existing = conversationsMap.get(externalId);
+      if (!existing || convoObj.lastMessage.timestamp > existing.lastMessage.timestamp) {
+        conversationsMap.set(externalId, convoObj);
+      }
+    }
+
+    const conversations = Array.from(conversationsMap.values());
     return conversations.sort((a, b) => b.lastMessage.timestamp - a.lastMessage.timestamp);
   } catch (err) {
     console.error('Error in getConversations:', err);

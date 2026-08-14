@@ -178,8 +178,8 @@ export default function InboxLayout() {
                     ) : filteredConversations.length === 0 ? (
                         <p className="p-4 text-center text-muted-foreground text-sm">No matching conversations.</p>
                     ) : (
-                        filteredConversations.map(convo => (
-                            <div key={convo.id} onClick={() => setSelectedConversationId(convo.id)} className={cn("flex cursor-pointer items-center gap-3 p-3 hover:bg-muted/50", selectedConversationId === convo.id && 'bg-muted')}>
+                        filteredConversations.map((convo, idx) => (
+                            <div key={`${convo.id}_${idx}`} onClick={() => setSelectedConversationId(convo.id)} className={cn("flex cursor-pointer items-center gap-3 p-3 hover:bg-muted/50", selectedConversationId === convo.id && 'bg-muted')}>
                                 <Avatar>
                                     <AvatarImage src={convo.avatar} alt={convo.name} />
                                     <AvatarFallback>{convo.name.charAt(0).toUpperCase()}</AvatarFallback>
@@ -241,8 +241,8 @@ export default function InboxLayout() {
                                 </div>
                             ) : (
                                 <div className="space-y-4">
-                                    {messages.map((msg) => (
-                                        <div key={msg.id} className={cn("flex items-end gap-2", msg.fromMe ? 'justify-end' : 'justify-start')}>
+                                    {messages.map((msg, idx) => (
+                                        <div key={`${msg.id}_${idx}`} className={cn("flex items-end gap-2", msg.fromMe ? 'justify-end' : 'justify-start')}>
                                             {!msg.fromMe && <Avatar className="h-8 w-8"><AvatarImage src={selectedConversation.avatar} alt={selectedConversation.name} /><AvatarFallback>{selectedConversation.name.charAt(0).toUpperCase()}</AvatarFallback></Avatar>}
                                             <div className={cn("max-w-xs rounded-lg px-4 py-2 md:max-w-md lg:max-w-lg", msg.fromMe ? 'bg-primary text-primary-foreground' : 'border bg-card')}>
                                                 <p>{msg.text}</p>
