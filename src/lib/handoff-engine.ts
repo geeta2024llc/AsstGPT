@@ -64,13 +64,14 @@ export async function classifyIntent(
   }
 
   // 2. Fast LLM Classification fallback for complex conversational expressions
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!apiKey) {
+  const groqKey = process.env.GROQ_API_KEY || process.env.GROQ_KEY;
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY || process.env.GOOGLE_API_KEY;
+
+  if (!groqKey && !geminiKey) {
     return 'product_inquiry';
   }
 
-  try {
-    const prompt = `Classify the following customer message into EXACTLY ONE of these categories:
+  const prompt = `Classify the following customer message into EXACTLY ONE of these categories:
 - human_agent_request (wants to speak to a person/agent/representative)
 - complaint_frustration (angry, upset, dissatisfied, filing a complaint)
 - billing_refund (money back, dispute, invoice, charge issues)
@@ -82,28 +83,58 @@ export async function classifyIntent(
 Customer Message: "${clean.slice(0, 300)}"
 Return ONLY the category name in lowercase with no extra text or explanation:`;
 
-    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(3500),
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 20,
+  if (groqKey) {
+    try {
+      const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${groqKey}`,
         },
-      }),
-    });
+        signal: AbortSignal.timeout(2500),
+        body: JSON.stringify({
+          model: 'llama-3.1-8b-instant',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.1,
+          max_tokens: 20,
+        }),
+      });
 
-    const data = await resp.json();
-    const rawResult = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim()?.toLowerCase() || '';
-
-    const matched = KNOWN_INTENTS.find(i => rawResult.includes(i));
-    return matched || 'product_inquiry';
-  } catch (err) {
-    console.warn('[INTENT_CLASSIFIER] LLM intent classification failed, defaulting to product_inquiry:', err);
-    return 'product_inquiry';
+      const data = await resp.json();
+      const rawResult = data.choices?.[0]?.message?.content?.trim()?.toLowerCase() || '';
+      const matched = KNOWN_INTENTS.find(i => rawResult.includes(i));
+      if (matched) return matched;
+    } catch (groqErr) {
+      console.warn('[INTENT_CLASSIFIER] Groq classification failed, falling back to Gemini/default:', groqErr);
+    }
   }
+
+  if (geminiKey) {
+    try {
+      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(3500),
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 20,
+          },
+        }),
+      });
+
+      const data = await resp.json();
+      const rawResult = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim()?.toLowerCase() || '';
+
+      const matched = KNOWN_INTENTS.find(i => rawResult.includes(i));
+      return matched || 'product_inquiry';
+    } catch (err) {
+      console.warn('[INTENT_CLASSIFIER] LLM intent classification failed, defaulting to product_inquiry:', err);
+    }
+  }
+
+  return 'product_inquiry';
 }
 
 /**

@@ -10,7 +10,7 @@ import {
   CardTitle,
   CardDescription,
 } from '@/components/ui/card';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
@@ -20,7 +20,8 @@ export default function QRLogin() {
   const router = useRouter();
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>('connecting');
-  const [message, setMessage] = useState('Initializing...');
+  const [message, setMessage] = useState('Checking WhatsApp connection...');
+  const [isResetting, setIsResetting] = useState(false);
   
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -31,74 +32,99 @@ export default function QRLogin() {
     }
   }, []);
 
-  const startPolling = useCallback(() => {
-    stopPolling(); // Ensure no multiple pollers are running
-    
-    pollIntervalRef.current = setInterval(async () => {
-      try {
-        const res = await fetch('/api/whatsapp/status', { cache: 'no-store' });
-        if (!res.ok) throw new Error('Status check failed');
-        const data = await res.json();
-        
-        setStatus(data.status);
+  const checkStatusOnce = useCallback(async () => {
+    try {
+      const res = await fetch('/api/whatsapp/status', { cache: 'no-store' });
+      if (!res.ok) throw new Error('Status check failed');
+      const data = await res.json();
+      
+      setStatus(data.status);
 
-        if (data.status === 'connected') {
-          setMessage('Successfully connected! Redirecting...');
-          stopPolling();
-          setTimeout(() => router.push('/dashboard'), 1000);
-        } else if (data.status === 'connecting') {
-          if (data.qr) {
-            setQrCode(data.qr);
-            setMessage('Scan this QR code with the WhatsApp mobile app.');
-          } else {
-            setQrCode(null);
-            setMessage('Generating QR code, please wait...');
-          }
-        } else { // disconnected or error
-          setQrCode(null);
-          setMessage(data.lastDisconnect?.reason || 'Connection failed. Please try again.');
-          stopPolling();
-        }
-
-      } catch (error) {
-        console.error('Failed to fetch WhatsApp status:', error);
-        setStatus('error');
-        setMessage('An error occurred while checking status.');
+      if (data.status === 'connected') {
+        setMessage('Successfully connected! Redirecting to Dashboard...');
         stopPolling();
+        setTimeout(() => router.push('/dashboard'), 600);
+        return data;
+      } else if (data.status === 'connecting') {
+        if (data.qr) {
+          setQrCode(data.qr);
+          setMessage('Scan this QR code with the WhatsApp mobile app.');
+        } else {
+          setQrCode(null);
+          setMessage('Connecting to WhatsApp, please wait...');
+        }
+      } else { // disconnected or error
+        setQrCode(null);
+        setMessage(data.lastDisconnect?.reason || 'WhatsApp is disconnected. Click Retry or scan new QR code.');
       }
+      return data;
+    } catch (error) {
+      console.error('Failed to fetch WhatsApp status:', error);
+      setStatus('error');
+      setMessage('An error occurred while checking WhatsApp status.');
+      return null;
+    }
+  }, [router, stopPolling]);
+
+  const startPolling = useCallback(() => {
+    stopPolling();
+    pollIntervalRef.current = setInterval(async () => {
+      await checkStatusOnce();
     }, 2000);
-  }, [stopPolling, router]);
+  }, [checkStatusOnce, stopPolling]);
 
-
-  // Function for the "Try Again" button or initial load
-  const startFreshConnection = useCallback(async () => {
+  // Safe initialize: checks status first, inits only if disconnected, NEVER forces a logout
+  const initializeConnection = useCallback(async () => {
     stopPolling();
     setStatus('connecting');
-    setMessage('Requesting a new QR code...');
+    setMessage('Checking existing WhatsApp session...');
+
+    try {
+      const initialStatus = await checkStatusOnce();
+      if (initialStatus?.status === 'connected') {
+        return;
+      }
+
+      // If disconnected, trigger backend init to load existing saved credentials
+      if (initialStatus?.status === 'disconnected') {
+        await fetch('/api/whatsapp/init', { method: 'POST' });
+      }
+
+      startPolling();
+    } catch (e) {
+      setStatus('error');
+      setMessage('Failed to contact server. Please check your network connection.');
+      stopPolling();
+    }
+  }, [checkStatusOnce, startPolling, stopPolling]);
+
+  // Explicit session reset (ONLY when user explicitly clicks "Reset & Generate New QR")
+  const forceFreshSession = useCallback(async () => {
+    setIsResetting(true);
+    stopPolling();
+    setStatus('connecting');
+    setMessage('Resetting session and requesting new QR code...');
     setQrCode(null);
 
     try {
-      // Force a full cleanup on the server before starting a new session.
       await fetch('/api/whatsapp/logout', { method: 'POST' });
-      // Now initialize a brand new session.
       await fetch('/api/whatsapp/init', { method: 'POST' });
-      // Start polling to get the QR code and subsequent statuses.
       startPolling();
     } catch (e) {
-        setStatus('error');
-        setMessage('Failed to contact server. Please check your internet connection.');
-        stopPolling();
+      setStatus('error');
+      setMessage('Failed to reset WhatsApp session.');
+      stopPolling();
+    } finally {
+      setIsResetting(false);
     }
   }, [startPolling, stopPolling]);
 
-  // Initial effect to start the process
   useEffect(() => {
-    startFreshConnection();
+    initializeConnection();
     return () => {
       stopPolling();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run only on mount
+  }, [initializeConnection, stopPolling]);
 
   const showLoading = status === 'connecting' && !qrCode;
   const showQR = status === 'connecting' && qrCode;
@@ -138,20 +164,26 @@ export default function QRLogin() {
               {showError && (
                   <div className="flex flex-col items-center text-center text-destructive">
                       <AlertCircle className="h-12 w-12" />
-                      <p className="mt-4 font-semibold">Connection Failed</p>
+                      <p className="mt-4 font-semibold">Disconnected</p>
                   </div>
               )}
             </div>
           {showError && (
             <Alert variant="destructive" className="w-full">
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Error Details</AlertTitle>
+              <AlertTitle>Connection Status</AlertTitle>
               <AlertDescription className="break-words">
                 {message}
               </AlertDescription>
-              <Button onClick={startFreshConnection} className="mt-4 w-full">
-                Try Again
-              </Button>
+              <div className="mt-4 flex flex-col gap-2 w-full">
+                <Button onClick={initializeConnection} className="w-full">
+                  Retry Connection
+                </Button>
+                <Button onClick={forceFreshSession} variant="outline" disabled={isResetting} className="w-full">
+                  {isResetting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                  Reset & Generate New QR
+                </Button>
+              </div>
             </Alert>
           )}
         </CardContent>

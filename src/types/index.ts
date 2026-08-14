@@ -207,7 +207,7 @@ export interface AgentRule {
 
 export type AgentStatus = 'active' | 'paused' | 'errored' | 'disconnected';
 
-export type AIProvider = 'openai' | 'gemini' | 'anthropic';
+export type AIProvider = 'openai' | 'gemini' | 'anthropic' | 'groq';
 
 export interface AISettings {
   provider: AIProvider;

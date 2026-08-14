@@ -529,8 +529,9 @@ export default function AgentDesigner({ agent, onSaved }: AgentDesignerProps) {
                     <SelectValue placeholder="Choose provider" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="groq">Groq (Llama 3.3 70B - Ultra Fast ⚡)</SelectItem>
+                    <SelectItem value="gemini">Google Gemini</SelectItem>
                     <SelectItem value="openai">OpenAI</SelectItem>
-                    <SelectItem value="gemini">Gemini</SelectItem>
                     <SelectItem value="anthropic">Anthropic</SelectItem>
                   </SelectContent>
                 </Select>

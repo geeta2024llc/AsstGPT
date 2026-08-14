@@ -97,6 +97,7 @@ if (!global.whatsappState) {
 }
 
 const state = global.whatsappState;
+const inFlightMessageIds = new Set<string>();
 
 async function handleMessage(msg: WAMessage) {
   try {
@@ -107,6 +108,13 @@ async function handleMessage(msg: WAMessage) {
     const chatId = msg.key.remoteJid;
     const providerMessageId = msg.key.id;
     if (!providerMessageId) return;
+
+    // Concurrency Lock: Drop simultaneous duplicate upserts for the same message
+    if (inFlightMessageIds.has(providerMessageId)) {
+      return;
+    }
+    inFlightMessageIds.add(providerMessageId);
+    setTimeout(() => inFlightMessageIds.delete(providerMessageId), 30_000);
 
     // Extract message content and media attachments
     let messageContent = '';

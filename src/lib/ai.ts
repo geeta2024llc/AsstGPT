@@ -180,12 +180,14 @@ export async function generateAIResponse(
 
   const apiKey = settings.apiKey ||
     (provider === 'openai' ? process.env.OPENAI_API_KEY :
+     provider === 'groq' ? (process.env.GROQ_API_KEY || process.env.GROQ_KEY) :
      provider === 'gemini' ? (process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY || process.env.GOOGLE_API_KEY) :
      process.env.ANTHROPIC_API_KEY);
 
   console.log('API key available:', !!apiKey);
   if (!apiKey) {
-    const errMsg = `[AI CONFIG ERROR] ${provider.toUpperCase()} API key is not configured in process.env. Expected GEMINI_API_KEY in .env`;
+    const envVarName = provider === 'groq' ? 'GROQ_API_KEY' : provider === 'openai' ? 'OPENAI_API_KEY' : provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'GEMINI_API_KEY';
+    const errMsg = `[AI CONFIG ERROR] ${provider.toUpperCase()} API key is not configured in process.env. Expected ${envVarName} in .env`;
     console.warn(errMsg);
     throw new Error(errMsg);
   }
@@ -384,6 +386,100 @@ export async function generateAIResponse(
           throw new Error(`Anthropic API Error: ${data.error.message || JSON.stringify(data.error)}`);
         }
         responseText = data.content?.[0]?.text?.trim() || '';
+        break;
+      }
+      case 'groq': {
+        const qualityInstruction = `Strict Communication Guidelines:
+- Language: Always match the customer's language exactly (English, Romanized/Mixed Nepali, or Nepali Devanagari).
+- Tone & Format: Be polite, concise, clear, and professional. Format for WhatsApp (short paragraphs, max 3-4 sentences).
+- Knowledge-First Accuracy: When a [Reference Knowledge Base] is provided, use ONLY that information to answer business-specific questions about prices, hours, policies, services, location, payment methods, and contact details. Do NOT add, invent, or extrapolate any business facts.
+- Anti-Hallucination: If specific business information is NOT present in the knowledge base, respond with: "I'm sorry, that information is not currently available. Please contact us directly for assistance."
+- General Conversation: For casual greetings (hi, hello, oi k xa, sup, etc.), respond naturally and warmly.`;
+
+        const groqSystemPrompt = `${systemPrompt}\n\n${qualityInstruction}`;
+        
+        const messages: Array<{ role: string; content: any }> = [
+          { role: 'system', content: groqSystemPrompt }
+        ];
+
+        if (context) {
+          messages.push({
+            role: 'system',
+            content: `[Reference Knowledge Base — use only this for business-specific facts]:\n${context}`
+          });
+        }
+
+        if (conversationHistory && conversationHistory.length > 0) {
+          for (const msg of conversationHistory) {
+            messages.push({
+              role: msg.fromMe ? 'assistant' : 'user',
+              content: msg.text,
+            });
+          }
+        }
+
+        let model = 'llama-3.3-70b-versatile';
+        if (mediaAttachment && mediaAttachment.mimeType.startsWith('image/')) {
+          model = 'llama-3.2-11b-vision-preview';
+          const base64 = mediaAttachment.buffer.toString('base64');
+          messages.push({
+            role: 'user',
+            content: [
+              { type: 'text', text: userText || 'Please inspect this image.' },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${mediaAttachment.mimeType};base64,${base64}`,
+                },
+              },
+            ],
+          });
+        } else {
+          messages.push({ role: 'user', content: userText || 'Hello' });
+        }
+
+        console.log(`[GROQ] Dispatching request with model: ${model}, max_tokens: ${settings.maxLen || 300}...`);
+
+        const groqCandidateModels = [model, 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+        let lastGroqErr: any = null;
+
+        for (const candidateModel of groqCandidateModels) {
+          try {
+            const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify({
+                model: candidateModel,
+                messages,
+                max_tokens: Math.min(settings.maxLen || 300, 1024),
+                temperature: settings.temperature !== undefined ? settings.temperature : 0.7,
+              }),
+            });
+
+            const data = await resp.json();
+            if (data.error) {
+              lastGroqErr = data.error;
+              console.warn(`[GROQ WARN] Attempt with model ${candidateModel} failed:`, data.error.message);
+              continue;
+            }
+
+            const candidateText = data.choices?.[0]?.message?.content?.trim();
+            if (candidateText) {
+              responseText = candidateText;
+              break;
+            }
+          } catch (err: any) {
+            lastGroqErr = err;
+            console.warn(`[GROQ WARN] Fetch error with model ${candidateModel}:`, err.message);
+          }
+        }
+
+        if (!responseText && lastGroqErr) {
+          throw new Error(`Groq API Error: ${lastGroqErr.message || JSON.stringify(lastGroqErr)}`);
+        }
         break;
       }
       default:
