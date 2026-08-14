@@ -16,6 +16,9 @@ import {
   XCircle,
   Clock,
   AlertTriangle,
+  HelpCircle,
+  MessageSquare,
+  Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -43,6 +46,44 @@ import type { KnowledgeFile } from '@/types';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 
+interface FaqItem {
+  id: string;
+  question: string;
+  answer: string;
+}
+
+function parseFaqContent(content: string): FaqItem[] {
+  if (!content || !content.trim()) {
+    return [{ id: '1', question: '', answer: '' }];
+  }
+
+  const items: FaqItem[] = [];
+  const regex = /(?:^|\n+)(?:Q|Question):\s*(.+?)\s*(?:\n+)(?:A|Answer):\s*([\s\S]+?)(?=(?:\n+(?:Q|Question):)|$)/gi;
+  let match;
+  let count = 1;
+
+  while ((match = regex.exec(content)) !== null) {
+    items.push({
+      id: String(count++),
+      question: match[1]?.trim() || '',
+      answer: match[2]?.trim() || '',
+    });
+  }
+
+  if (items.length === 0) {
+    return [{ id: '1', question: '', answer: content.trim() }];
+  }
+
+  return items;
+}
+
+function formatFaqContent(faqItems: FaqItem[]): string {
+  return faqItems
+    .filter(item => item.question.trim() || item.answer.trim())
+    .map(item => `Q: ${item.question.trim()}\nA: ${item.answer.trim()}`)
+    .join('\n\n');
+}
+
 export default function KnowledgeBaseManager() {
   const [files, setFiles] = useState<KnowledgeFile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -54,12 +95,18 @@ export default function KnowledgeBaseManager() {
   const [newTitle, setNewTitle] = useState('');
   const [newType, setNewType] = useState('faq');
   const [newContent, setNewContent] = useState('');
+  const [newFaqItems, setNewFaqItems] = useState<FaqItem[]>([
+    { id: '1', question: '', answer: '' }
+  ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Edit Modal State
   const [editingFile, setEditingFile] = useState<KnowledgeFile | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [editType, setEditType] = useState('faq');
   const [editContent, setEditContent] = useState('');
+  const [editFaqItems, setEditFaqItems] = useState<FaqItem[]>([]);
+  const [editModeRaw, setEditModeRaw] = useState(false);
 
   const { toast } = useToast();
 
@@ -126,9 +173,39 @@ export default function KnowledgeBaseManager() {
     }
   };
 
+  // Add FAQ Item
+  const handleAddNewFaqItem = () => {
+    setNewFaqItems(prev => [
+      ...prev,
+      { id: String(Date.now()), question: '', answer: '' }
+    ]);
+  };
+
+  // Update Add FAQ Item
+  const handleUpdateNewFaqItem = (id: string, field: 'question' | 'answer', value: string) => {
+    setNewFaqItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
+  };
+
+  // Remove Add FAQ Item
+  const handleRemoveNewFaqItem = (id: string) => {
+    setNewFaqItems(prev => prev.length > 1 ? prev.filter(item => item.id !== id) : prev);
+  };
+
+  // Add Manual Knowledge Submit
   const handleAddManualKnowledge = async () => {
-    if (!newTitle.trim() || !newContent.trim()) {
-      toast({ variant: 'destructive', title: 'Validation Error', description: 'Title and content are required.' });
+    let finalContent = newContent.trim();
+    if (newType === 'faq') {
+      finalContent = formatFaqContent(newFaqItems);
+    }
+
+    if (!newTitle.trim() || !finalContent.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Validation Error',
+        description: newType === 'faq'
+          ? 'Title and at least one FAQ Question & Answer are required.'
+          : 'Title and content are required.',
+      });
       return;
     }
 
@@ -140,7 +217,7 @@ export default function KnowledgeBaseManager() {
         body: JSON.stringify({
           fileName: newTitle.trim(),
           fileType: newType,
-          content: newContent.trim(),
+          content: finalContent,
           enabled: true,
         }),
       });
@@ -150,6 +227,7 @@ export default function KnowledgeBaseManager() {
       setIsAddOpen(false);
       setNewTitle('');
       setNewContent('');
+      setNewFaqItems([{ id: '1', question: '', answer: '' }]);
       await fetchFiles();
     } catch (error) {
       toast({ variant: 'destructive', title: 'Error', description: (error as Error).message });
@@ -178,8 +256,45 @@ export default function KnowledgeBaseManager() {
     }
   };
 
+  // Edit Handlers
+  const handleOpenEdit = (file: KnowledgeFile) => {
+    setEditingFile(file);
+    setEditTitle(file.fileName);
+    setEditType(file.fileType);
+    setEditContent(file.content);
+    setEditModeRaw(false);
+    if (file.fileType === 'faq') {
+      setEditFaqItems(parseFaqContent(file.content));
+    }
+  };
+
+  const handleAddEditFaqItem = () => {
+    setEditFaqItems(prev => [
+      ...prev,
+      { id: String(Date.now()), question: '', answer: '' }
+    ]);
+  };
+
+  const handleUpdateEditFaqItem = (id: string, field: 'question' | 'answer', value: string) => {
+    setEditFaqItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
+  };
+
+  const handleRemoveEditFaqItem = (id: string) => {
+    setEditFaqItems(prev => prev.length > 1 ? prev.filter(item => item.id !== id) : prev);
+  };
+
   const handleSaveEdit = async () => {
-    if (!editingFile || !editTitle.trim() || !editContent.trim()) return;
+    if (!editingFile || !editTitle.trim()) return;
+
+    let finalContent = editContent.trim();
+    if (editType === 'faq' && !editModeRaw) {
+      finalContent = formatFaqContent(editFaqItems);
+    }
+
+    if (!finalContent.trim()) {
+      toast({ variant: 'destructive', title: 'Validation Error', description: 'Content cannot be empty.' });
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -189,7 +304,7 @@ export default function KnowledgeBaseManager() {
         body: JSON.stringify({
           id: editingFile.id,
           fileName: editTitle.trim(),
-          content: editContent.trim(),
+          content: finalContent,
         }),
       });
       if (!res.ok) throw new Error('Failed to update knowledge source');
@@ -264,42 +379,122 @@ export default function KnowledgeBaseManager() {
                 <Plus className="h-4 w-4" /> Add FAQ / Text
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-xl">
+            <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
               <DialogHeader>
-                <DialogTitle>Add Knowledge Source</DialogTitle>
+                <DialogTitle className="flex items-center gap-2">
+                  <HelpCircle className="h-5 w-5 text-primary" /> Add Knowledge Source
+                </DialogTitle>
               </DialogHeader>
-              <div className="space-y-4 py-2">
-                <div>
-                  <label className="text-xs font-semibold text-muted-foreground">Title / Topic</label>
-                  <Input
-                    placeholder="e.g. Refund Policy & Working Hours FAQ"
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                  />
+
+              <ScrollArea className="flex-1 pr-3 -mr-3 max-h-[70vh]">
+                <div className="space-y-4 py-2">
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground">Title / Topic</label>
+                    <Input
+                      placeholder="e.g. Pricing & Services FAQ"
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground">Source Type</label>
+                    <select
+                      value={newType}
+                      onChange={(e) => setNewType(e.target.value)}
+                      className="w-full h-9 rounded-md border bg-background px-3 text-sm"
+                    >
+                      <option value="faq">FAQ / Question-Answer (Structured)</option>
+                      <option value="txt">Plain Text Document</option>
+                      <option value="url">Web Page / URL Content</option>
+                    </select>
+                  </div>
+
+                  {/* Dynamic FAQ Question & Answer List */}
+                  {newType === 'faq' ? (
+                    <div className="space-y-4 pt-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                          <MessageSquare className="w-3.5 h-3.5 text-primary" /> FAQ Questions & Answers
+                        </label>
+                        <span className="text-[11px] text-muted-foreground">
+                          {newFaqItems.length} {newFaqItems.length === 1 ? 'entry' : 'entries'}
+                        </span>
+                      </div>
+
+                      <div className="space-y-3">
+                        {newFaqItems.map((item, index) => (
+                          <div
+                            key={item.id}
+                            className="p-3.5 rounded-lg border border-border bg-card/60 space-y-2.5 transition-all hover:border-primary/40 shadow-sm"
+                          >
+                            <div className="flex items-center justify-between">
+                              <Badge variant="outline" className="text-xs font-medium bg-muted/50">
+                                Q&A #{index + 1}
+                              </Badge>
+                              {newFaqItems.length > 1 && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                  onClick={() => handleRemoveNewFaqItem(item.id)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                            </div>
+
+                            <div>
+                              <label className="text-[11px] font-medium text-muted-foreground block mb-1">
+                                Question
+                              </label>
+                              <Input
+                                placeholder="e.g. Kati price ho? / What are your pricing plans?"
+                                value={item.question}
+                                onChange={(e) => handleUpdateNewFaqItem(item.id, 'question', e.target.value)}
+                                className="text-sm font-medium"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[11px] font-medium text-muted-foreground block mb-1">
+                                Answer
+                              </label>
+                              <Textarea
+                                placeholder="e.g. Our Basic Plan is Rs. 3,500/month for 2,000 messages. Pro Plan is Rs. 7,500/month."
+                                value={item.answer}
+                                onChange={(e) => handleUpdateNewFaqItem(item.id, 'answer', e.target.value)}
+                                className="min-h-[64px] text-sm resize-y"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleAddNewFaqItem}
+                        className="w-full border-dashed flex items-center justify-center gap-1.5 py-4 hover:border-primary hover:text-primary transition-colors"
+                      >
+                        <Plus className="h-4 w-4" /> Add Question & Answer
+                      </Button>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground">Business Facts & Knowledge Content</label>
+                      <Textarea
+                        placeholder="Write or paste your verified business facts, prices, contact numbers, and policies..."
+                        value={newContent}
+                        onChange={(e) => setNewContent(e.target.value)}
+                        className="h-48 font-mono text-sm"
+                      />
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <label className="text-xs font-semibold text-muted-foreground">Source Type</label>
-                  <select
-                    value={newType}
-                    onChange={(e) => setNewType(e.target.value)}
-                    className="w-full h-9 rounded-md border bg-background px-3 text-sm"
-                  >
-                    <option value="faq">FAQ / Question-Answer</option>
-                    <option value="txt">Plain Text Document</option>
-                    <option value="url">Web Page / URL Content</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-muted-foreground">Business Facts & Knowledge Content</label>
-                  <Textarea
-                    placeholder="Write or paste your verified business facts, prices, contact numbers, and policies..."
-                    value={newContent}
-                    onChange={(e) => setNewContent(e.target.value)}
-                    className="h-48 font-mono text-sm"
-                  />
-                </div>
-              </div>
-              <DialogFooter>
+              </ScrollArea>
+
+              <DialogFooter className="pt-3 border-t mt-2">
                 <Button variant="outline" onClick={() => setIsAddOpen(false)}>Cancel</Button>
                 <Button onClick={handleAddManualKnowledge} disabled={isSubmitting}>
                   {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save Source'}
@@ -406,33 +601,128 @@ export default function KnowledgeBaseManager() {
                       {/* Edit Modal */}
                       <Dialog open={editingFile?.id === file.id} onOpenChange={(open) => !open && setEditingFile(null)}>
                         <DialogTrigger asChild>
-                          <Button variant="ghost" size="icon" onClick={() => {
-                            setEditingFile(file);
-                            setEditTitle(file.fileName);
-                            setEditContent(file.content);
-                          }}>
+                          <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(file)}>
                             <Edit2 className="h-4 w-4" />
                           </Button>
                         </DialogTrigger>
-                        <DialogContent className="max-w-2xl">
+                        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
                           <DialogHeader>
-                            <DialogTitle>Edit Knowledge Source</DialogTitle>
+                            <div className="flex items-center justify-between pr-4">
+                              <DialogTitle className="flex items-center gap-2">
+                                <Edit2 className="h-4 w-4 text-primary" /> Edit Knowledge Source
+                              </DialogTitle>
+                              {editType === 'faq' && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-xs text-muted-foreground hover:text-foreground"
+                                  onClick={() => {
+                                    if (!editModeRaw) {
+                                      setEditContent(formatFaqContent(editFaqItems));
+                                    } else {
+                                      setEditFaqItems(parseFaqContent(editContent));
+                                    }
+                                    setEditModeRaw(!editModeRaw);
+                                  }}
+                                >
+                                  {editModeRaw ? 'Switch to Q&A Editor' : 'Switch to Raw Text'}
+                                </Button>
+                              )}
+                            </div>
                           </DialogHeader>
-                          <div className="space-y-4 py-2">
-                            <div>
-                              <label className="text-xs font-semibold text-muted-foreground">Title</label>
-                              <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+
+                          <ScrollArea className="flex-1 pr-3 -mr-3 max-h-[70vh]">
+                            <div className="space-y-4 py-2">
+                              <div>
+                                <label className="text-xs font-semibold text-muted-foreground">Title</label>
+                                <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+                              </div>
+
+                              {editType === 'faq' && !editModeRaw ? (
+                                <div className="space-y-4 pt-1">
+                                  <div className="flex items-center justify-between">
+                                    <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                                      <MessageSquare className="w-3.5 h-3.5 text-primary" /> FAQ Questions & Answers
+                                    </label>
+                                    <span className="text-[11px] text-muted-foreground">
+                                      {editFaqItems.length} {editFaqItems.length === 1 ? 'entry' : 'entries'}
+                                    </span>
+                                  </div>
+
+                                  <div className="space-y-3">
+                                    {editFaqItems.map((item, index) => (
+                                      <div
+                                        key={item.id}
+                                        className="p-3.5 rounded-lg border border-border bg-card/60 space-y-2.5 transition-all hover:border-primary/40 shadow-sm"
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <Badge variant="outline" className="text-xs font-medium bg-muted/50">
+                                            Q&A #{index + 1}
+                                          </Badge>
+                                          {editFaqItems.length > 1 && (
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                              onClick={() => handleRemoveEditFaqItem(item.id)}
+                                            >
+                                              <Trash2 className="h-3.5 w-3.5" />
+                                            </Button>
+                                          )}
+                                        </div>
+
+                                        <div>
+                                          <label className="text-[11px] font-medium text-muted-foreground block mb-1">
+                                            Question
+                                          </label>
+                                          <Input
+                                            placeholder="e.g. Kati price ho? / What are your pricing plans?"
+                                            value={item.question}
+                                            onChange={(e) => handleUpdateEditFaqItem(item.id, 'question', e.target.value)}
+                                            className="text-sm font-medium"
+                                          />
+                                        </div>
+
+                                        <div>
+                                          <label className="text-[11px] font-medium text-muted-foreground block mb-1">
+                                            Answer
+                                          </label>
+                                          <Textarea
+                                            placeholder="e.g. Our Basic Plan is Rs. 3,500/month for 2,000 messages. Pro Plan is Rs. 7,500/month."
+                                            value={item.answer}
+                                            onChange={(e) => handleUpdateEditFaqItem(item.id, 'answer', e.target.value)}
+                                            className="min-h-[64px] text-sm resize-y"
+                                          />
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={handleAddEditFaqItem}
+                                    className="w-full border-dashed flex items-center justify-center gap-1.5 py-4 hover:border-primary hover:text-primary transition-colors"
+                                  >
+                                    <Plus className="h-4 w-4" /> Add Question & Answer
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div>
+                                  <label className="text-xs font-semibold text-muted-foreground">Content</label>
+                                  <Textarea
+                                    value={editContent}
+                                    onChange={(e) => setEditContent(e.target.value)}
+                                    className="h-64 font-mono text-sm"
+                                  />
+                                </div>
+                              )}
                             </div>
-                            <div>
-                              <label className="text-xs font-semibold text-muted-foreground">Content</label>
-                              <Textarea
-                                value={editContent}
-                                onChange={(e) => setEditContent(e.target.value)}
-                                className="h-64 font-mono text-sm"
-                              />
-                            </div>
-                          </div>
-                          <DialogFooter>
+                          </ScrollArea>
+
+                          <DialogFooter className="pt-3 border-t mt-2">
                             <Button variant="outline" onClick={() => setEditingFile(null)}>Cancel</Button>
                             <Button onClick={handleSaveEdit} disabled={isSubmitting}>
                               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save Changes'}
