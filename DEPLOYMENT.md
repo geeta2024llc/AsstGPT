@@ -123,9 +123,25 @@ sudo systemctl reload caddy
 
 ## 4. Operational Commands & Maintenance
 
-### Check Health Endpoint
+### Check Health & Auth Storage Endpoint
 ```bash
 curl -s https://YOUR_RAILWAY_DOMAIN.up.railway.app/api/health
+```
+Example healthy response payload:
+```json
+{
+  "status": "ok",
+  "checks": {
+    "database": "connected",
+    "whatsApp": "connected",
+    "whatsappStorage": {
+      "writable": true,
+      "exists": true,
+      "hasCredentials": true,
+      "error": null
+    }
+  }
+}
 ```
 
 ### Backup WhatsApp Session Storage
@@ -134,8 +150,9 @@ curl -s https://YOUR_RAILWAY_DOMAIN.up.railway.app/api/health
 tar -czvf whatsapp-auth-backup-$(date +%F).tar.gz whatsapp-auth/
 ```
 
-### Troubleshooting WhatsApp Reconnects
-If WhatsApp client gets stuck:
-1. Check logs in Railway / Docker console.
-2. Visit `/dashboard` -> Connection Status.
-3. Click **Reset Connection / Rescan QR** if session was revoked on phone.
+### Troubleshooting WhatsApp Reconnects & Session Storage
+If WhatsApp client gets stuck or fails to save credentials:
+1. Verify Railway Volume Mount Path is strictly `/app/whatsapp-auth`.
+2. Inspect `checks.whatsappStorage` in `/api/health`. If `writable: false`, verify that `docker-entrypoint.sh` ran successfully as root before dropping privileges.
+3. Visit `/dashboard` -> Connection Status and click **Reset Connection / Rescan QR** if session was revoked on phone.
+

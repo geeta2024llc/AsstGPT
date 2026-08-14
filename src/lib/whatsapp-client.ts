@@ -550,6 +550,75 @@ async function handleMessage(msg: WAMessage) {
   }
 }
 
+export interface AuthStorageHealth {
+  directory: string;
+  exists: boolean;
+  writable: boolean;
+  hasCredentials: boolean;
+  error: string | null;
+}
+
+/**
+ * Validates and prepares the auth storage directory.
+ * - Ensures the target directory exists.
+ * - Tests write/read/unlink permissions safely using a transient probe file.
+ * - Detects and cleans up empty (0-byte) or corrupt creds.json files to ensure self-healing.
+ */
+export async function verifyAndPrepareAuthStorage(): Promise<AuthStorageHealth> {
+  const health: AuthStorageHealth = {
+    directory: WHATSAPP_AUTH_DIR,
+    exists: false,
+    writable: false,
+    hasCredentials: false,
+    error: null,
+  };
+
+  try {
+    await fs.mkdir(WHATSAPP_AUTH_DIR, { recursive: true });
+    health.exists = true;
+
+    // Test write permission with a lightweight probe file
+    const probePath = path.join(WHATSAPP_AUTH_DIR, `.probe-${Date.now()}`);
+    await fs.writeFile(probePath, 'ok', 'utf-8');
+    await fs.unlink(probePath);
+    health.writable = true;
+
+    const credsPath = path.join(WHATSAPP_AUTH_DIR, 'creds.json');
+    try {
+      const stat = await fs.stat(credsPath);
+      if (stat.size === 0) {
+        console.warn('STORAGE_CHECK: Detected 0-byte corrupt creds.json, clearing to allow clean pairing...');
+        await fs.unlink(credsPath);
+        health.hasCredentials = false;
+      } else {
+        // Sanity check JSON readability
+        const content = await fs.readFile(credsPath, 'utf-8');
+        JSON.parse(content);
+        health.hasCredentials = true;
+      }
+    } catch (err: any) {
+      if (err?.code === 'ENOENT') {
+        health.hasCredentials = false;
+      } else if (err instanceof SyntaxError) {
+        console.warn('STORAGE_CHECK: Detected malformed JSON in creds.json, clearing to allow clean recovery...');
+        await fs.unlink(credsPath).catch(() => {});
+        health.hasCredentials = false;
+      } else {
+        console.warn('STORAGE_CHECK: Error inspecting creds.json:', err);
+      }
+    }
+  } catch (err: any) {
+    console.error('STORAGE_CHECK: Failed storage permission or access check for WHATSAPP_AUTH_DIR:', err);
+    health.error = err?.message || String(err);
+  }
+
+  return health;
+}
+
+export async function getAuthStorageHealth(): Promise<AuthStorageHealth> {
+  return verifyAndPrepareAuthStorage();
+}
+
 /**
  * Safely clears all auth state files inside WHATSAPP_AUTH_DIR.
  * Deletes file contents instead of deleting the directory itself, because when
@@ -626,6 +695,12 @@ export async function init() {
   state.connectingSince = Date.now();
 
   try {
+    // 1. Verify filesystem write permissions and heal any corrupt 0-byte credentials
+    const storageHealth = await verifyAndPrepareAuthStorage();
+    if (!storageHealth.writable) {
+      throw new Error(`WhatsApp storage at "${WHATSAPP_AUTH_DIR}" is not writable: ${storageHealth.error || 'Permission Denied'}`);
+    }
+
     const { state: authState, saveCreds } = await useMultiFileAuthState(WHATSAPP_AUTH_DIR);
 
     // Ensure we're always using the latest WhatsApp Web version to avoid 515 errors
@@ -661,8 +736,14 @@ export async function init() {
     }, CONNECT_TIMEOUT_MS);
     let connectTimeoutTimer = armConnectTimeout();
 
-    // Attach event listeners
-    sock.ev.on('creds.update', saveCreds);
+    // Attach event listeners with error-boundary protection around disk writes
+    sock.ev.on('creds.update', async () => {
+      try {
+        await saveCreds();
+      } catch (saveErr) {
+        console.error('CRITICAL: Failed to save WhatsApp credentials to disk:', saveErr);
+      }
+    });
 
     sock.ev.on('messages.upsert', (update) => {
       for (const msg of update.messages) {

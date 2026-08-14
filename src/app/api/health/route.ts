@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { getClientState } from '@/lib/whatsapp-client';
+import { getClientState, getAuthStorageHealth } from '@/lib/whatsapp-client';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +20,7 @@ export async function GET() {
   }
 
   const waState = getClientState();
+  const storageHealth = await getAuthStorageHealth();
   const hasGeminiKey = Boolean(
     process.env.GEMINI_API_KEY ||
     process.env.GOOGLE_GENAI_API_KEY ||
@@ -39,6 +40,8 @@ export async function GET() {
     overallStatus = 'error';
   } else if (!hasGeminiKey) {
     overallStatus = 'error';
+  } else if (!storageHealth.writable) {
+    overallStatus = 'error';
   } else if (waStuckConnecting) {
     overallStatus = 'error';
   } else if (waState.status !== 'connected') {
@@ -53,9 +56,16 @@ export async function GET() {
     checks: {
       database: dbStatus,
       whatsApp: waState.status,
+      whatsappStorage: {
+        writable: storageHealth.writable,
+        exists: storageHealth.exists,
+        hasCredentials: storageHealth.hasCredentials,
+        error: storageHealth.error,
+      },
       aiProvider: 'gemini',
       aiConfigured: hasGeminiKey,
       whatsappAccount: waState.account ? waState.account.name : null,
     },
   }, { status: overallStatus === 'error' ? 503 : 200 });
 }
+
