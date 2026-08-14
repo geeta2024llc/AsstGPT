@@ -19,6 +19,7 @@ import { generateAIResponse, retrieveRelevantKnowledgeContext, transcribeAudio, 
 import { generateSpeechAudio } from './tts';
 import { evaluateHandoffRules, calculateAIConfidence } from './handoff-engine';
 import { dispatchWebhookEvent } from './webhook-dispatcher';
+import { findDirectFaqMatch, dynamicResponseCache } from './faq-matcher';
 import type { Message, Agent } from '@/types';
 
 const WHATSAPP_AUTH_DIR = path.join(process.cwd(), 'whatsapp-auth');
@@ -382,11 +383,46 @@ async function handleMessage(msg: WAMessage) {
       type: 'info',
     });
 
-    // 7. AI or Rule-Based Response Pipeline
+    // 7. Fast-Path Exact FAQ Matcher & Dynamic Semantic Cache (Sub-10ms, $0.00 Cost)
     let responseText: string | undefined;
     let ragContextString = '';
 
-    if (agent.mode === 'ai' && agent.aiSettings) {
+    if (agent.mode === 'ai' && !mediaAttachment) {
+      // Step A: Instant High-Confidence FAQ Matcher from Knowledge Base
+      try {
+        const directFaq = await findDirectFaqMatch(messageContent, agent.aiSettings?.knowledgeFileIds);
+        if (directFaq.matched && directFaq.answer) {
+          console.log(`[FAST-PATH FAQ] Direct match for "${messageContent}" from "${directFaq.source}" (${(directFaq.confidence * 100).toFixed(0)}% confidence, ${directFaq.matchType})`);
+          responseText = directFaq.answer;
+          await db.addLog({
+            user: agent.name,
+            action: 'Instant FAQ Match (0ms)',
+            details: `Matched FAQ: "${directFaq.question}" (${(directFaq.confidence * 100).toFixed(0)}% match) -> Answered directly with $0.00 LLM cost`,
+            type: 'success',
+          });
+        }
+      } catch (faqMatchErr) {
+        console.warn('FAQ fast-path matcher error, continuing to cache/LLM:', faqMatchErr);
+      }
+
+      // Step B: Check Dynamic In-Memory Response Cache for recent queries
+      if (!responseText) {
+        const cachedResponse = dynamicResponseCache.get(messageContent);
+        if (cachedResponse) {
+          console.log(`[DYNAMIC CACHE] Serving cached response for "${messageContent}"`);
+          responseText = cachedResponse;
+          await db.addLog({
+            user: agent.name,
+            action: 'Dynamic Cache Hit (0ms)',
+            details: `Served cached answer for "${messageContent.slice(0, 60)}" -> $0.00 LLM cost`,
+            type: 'success',
+          });
+        }
+      }
+    }
+
+    // Step C: Fall back to Gemini LLM only when query is not in FAQ or Cache
+    if (!responseText && agent.mode === 'ai' && agent.aiSettings) {
       try {
         const { context: ragContext, sourcesUsed, chunkCount } = await retrieveRelevantKnowledgeContext(messageContent, agent.aiSettings.knowledgeFileIds);
         ragContextString = ragContext;
@@ -401,6 +437,10 @@ async function handleMessage(msg: WAMessage) {
 
         responseText = await generateAIResponse(messageContent, agent.aiSettings, history, mediaAttachment);
         if (responseText) {
+          // Cache successful LLM response for repeat inquiries
+          if (!mediaAttachment && responseText.length > 5) {
+            dynamicResponseCache.set(messageContent, responseText);
+          }
           await db.addLog({
             user: agent.name,
             action: 'AI Response Generated',
