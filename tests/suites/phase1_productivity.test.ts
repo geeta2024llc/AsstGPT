@@ -87,6 +87,13 @@ export async function runPhase1TestSuite(): Promise<boolean> {
     currentConvo = convos.find(c => c.id === testChatId);
     console.log(`   - Reopened conversation status: ${currentConvo?.status} [${currentConvo?.status === 'open' ? '✅ PASS' : '❌ FAIL'}]`);
     if (currentConvo?.status !== 'open') allPassed = false;
+
+    // Cleanup test conversation & contact
+    const sb = (await import('../../src/lib/supabase')).getSupabaseAdmin();
+    const { data: cc } = await sb.from('contact_channels').select('contact_id').eq('external_id', testChatId).maybeSingle();
+    if (cc?.contact_id) {
+      await sb.from('contacts').delete().eq('id', cc.contact_id);
+    }
   } catch (lifeErr) {
     console.error('   - Lifecycle transition error:', lifeErr);
     allPassed = false;

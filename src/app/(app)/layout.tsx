@@ -21,8 +21,6 @@ import { Button } from '@/components/ui/button';
 import {
   Bot,
   LayoutDashboard,
-  Loader2,
-  LogOut,
   MessageSquare,
   Settings,
   BookMarked,
@@ -39,29 +37,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     email: 'admin@aiwhisper.app',
     avatar: `https://ui-avatars.com/api/?name=Admin+User&background=FF9800&color=fff`,
   });
-  const [isLoggingOut, setIsLoggingOut] = React.useState(false);
-
-  const handleLogout = async () => {
-    setIsLoggingOut(true);
-    try {
-      const res = await fetch('/api/whatsapp/logout', { method: 'POST' });
-      if (!res.ok) throw new Error('Logout failed');
-
-      toast({
-        title: 'Logged Out',
-        description: 'You have been successfully logged out.',
-      });
-      router.push('/');
-    } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Logout Failed',
-        description: 'Could not log out from WhatsApp. Please try again.',
-      });
-    } finally {
-      setIsLoggingOut(false);
-    }
-  };
 
   return (
     <SidebarProvider>
@@ -141,7 +116,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </SidebarMenu>
         </SidebarContent>
         <SidebarFooter>
-          <div className="flex w-full items-center gap-3">
+          <div className="flex w-full items-center gap-3 p-1">
             <Avatar className="h-8 w-8">
               <AvatarImage
                 src={user.avatar}
@@ -155,20 +130,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 {user.email}
               </span>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="ml-auto shrink-0"
-              onClick={handleLogout}
-              disabled={isLoggingOut}
-            >
-              {isLoggingOut ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <LogOut className="h-4 w-4" />
-              )}
-              <span className="sr-only">Logout</span>
-            </Button>
           </div>
         </SidebarFooter>
       </Sidebar>

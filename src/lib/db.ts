@@ -17,7 +17,12 @@ function getDefaultTenantId(): string {
  * Ensures that a default workspace tenant and WhatsApp channel exist in Supabase.
  * Returns the tenantId and channelId for tenant isolation.
  */
+let cachedTenantAndChannel: { tenantId: string; channelId: string } | null = null;
+
 async function ensureDefaultTenantAndChannel(): Promise<{ tenantId: string; channelId: string }> {
+  if (cachedTenantAndChannel) {
+    return cachedTenantAndChannel;
+  }
   const supabase = getSupabaseAdmin();
   const tenantId = getDefaultTenantId();
 
@@ -50,7 +55,8 @@ async function ensureDefaultTenantAndChannel(): Promise<{ tenantId: string; chan
     .maybeSingle();
 
   if (existingChannel) {
-    return { tenantId, channelId: existingChannel.id };
+    cachedTenantAndChannel = { tenantId, channelId: existingChannel.id };
+    return cachedTenantAndChannel;
   }
 
   const { data: newChannel, error: channelError } = await supabase
@@ -69,17 +75,18 @@ async function ensureDefaultTenantAndChannel(): Promise<{ tenantId: string; chan
     throw new Error('Default channel initialization failed');
   }
 
-  return { tenantId, channelId: newChannel.id };
+  cachedTenantAndChannel = { tenantId, channelId: newChannel.id };
+  return cachedTenantAndChannel;
 }
 
-// --- Conversations ---
+import { formatContactName } from './format-utils';
 
-export async function getConversations(): Promise<Conversation[]> {
+export async function getConversations(options?: { limit?: number; offset?: number }): Promise<Conversation[]> {
   try {
     const supabase = getSupabaseAdmin();
     const { tenantId } = await ensureDefaultTenantAndChannel();
 
-    const { data: convosData, error } = await supabase
+    let query = supabase
       .from('conversations')
       .select(`
         id,
@@ -110,7 +117,17 @@ export async function getConversations(): Promise<Conversation[]> {
           )
         )
       `)
-      .eq('tenant_id', tenantId);
+      .eq('tenant_id', tenantId)
+      .order('last_message_at', { ascending: false, nullsFirst: false });
+
+    if (options?.limit) {
+      query = query.limit(options.limit);
+    }
+    if (options?.offset) {
+      query = query.range(options.offset, options.offset + (options.limit || 50) - 1);
+    }
+
+    const { data: convosData, error } = await query;
 
     if (error) {
       console.error('Failed to fetch conversations from Supabase:', error);
@@ -123,18 +140,31 @@ export async function getConversations(): Promise<Conversation[]> {
 
     for (const c of convosData) {
       const contact = c.contacts as any;
-      const externalId = contact?.contact_channels?.[0]?.external_id || contact?.name || c.id;
+      const rawExtId = contact?.contact_channels?.[0]?.external_id || contact?.name || c.id;
+
+      // Skip internal WhatsApp system broadcasts and newsletter channels
+      if (
+        rawExtId === 'status@broadcast' ||
+        rawExtId.endsWith('@broadcast') ||
+        rawExtId.endsWith('@newsletter') ||
+        rawExtId === 'status'
+      ) {
+        continue;
+      }
+
+      const externalId = rawExtId;
       const lastMsgTime = c.last_message_at ? new Date(c.last_message_at).getTime() : Date.now();
+      const displayName = formatContactName(contact?.name, externalId);
 
       const convoObj: Conversation = {
         id: externalId,
-        name: contact?.name || externalId.split('@')[0],
+        name: displayName,
         unreadCount: c.unread_count || 0,
         lastMessage: {
           text: c.last_message_text || '',
           timestamp: lastMsgTime,
         },
-        avatar: contact?.avatar_url || `https://placehold.co/100x100.png?text=${(contact?.name || externalId.charAt(0)).toUpperCase()}`,
+        avatar: contact?.avatar_url || `https://placehold.co/100x100.png?text=${encodeURIComponent(displayName.charAt(0).toUpperCase())}`,
         assignedAgentId: c.assigned_agent_id || undefined,
         isBotPaused: !!c.is_bot_paused,
         assignedUserId: c.assigned_user_id || undefined,
@@ -167,6 +197,11 @@ export async function getConversations(): Promise<Conversation[]> {
   }
 }
 
+export function isConversationPaused(convo?: Partial<Conversation> | null): boolean {
+  if (!convo) return false;
+  return !!convo.isBotPaused || convo.assignedAgentId === null || convo.assignedAgentId === '';
+}
+
 export async function getConversation(id: string): Promise<Conversation | undefined> {
   const convos = await getConversations();
   return convos.find((c) => c.id === id);
@@ -193,8 +228,9 @@ export async function updateConversation(
 
     if (!contactId) {
       // Create contact
-      const contactName = update.name || id.split('@')[0];
-      const avatarUrl = update.avatar || `https://placehold.co/100x100.png?text=${contactName.charAt(0).toUpperCase()}`;
+      const isInvalidName = !update.name || update.name.toLowerCase() === 'me' || update.name.toLowerCase() === 'system';
+      const contactName = (isInvalidName ? id.split('@')[0] : update.name) || id;
+      const avatarUrl = update.avatar || `https://placehold.co/100x100.png?text=${encodeURIComponent(contactName.charAt(0).toUpperCase())}`;
 
       const { data: newContact, error: contactErr } = await supabase
         .from('contacts')
@@ -212,22 +248,42 @@ export async function updateConversation(
       }
       contactId = newContact.id;
 
-      // Create contact_channel
-      const { error: ccErr } = await supabase.from('contact_channels').insert({
+      // Upsert contact_channel to prevent race condition
+      const { error: ccErr } = await supabase.from('contact_channels').upsert({
         tenant_id: tenantId,
         contact_id: contactId,
         channel_id: channelId,
         external_id: id,
-        phone_number: id.split('@')[0],
-      });
-      if (ccErr) console.error('Failed to create contact channel in Supabase:', ccErr);
+      }, { onConflict: 'tenant_id,channel_id,external_id' });
+
+      if (ccErr) {
+        console.error('Failed to upsert contact_channel in Supabase:', ccErr);
+      }
     } else if (update.name || update.avatar) {
-      // Update contact info if provided
+      // Update contact info if provided, ensuring we never overwrite real names with "Me" or numeric fallbacks
       const contactUpdate: any = {};
-      if (update.name) contactUpdate.name = update.name;
+      if (update.name && update.name.toLowerCase() !== 'me' && update.name.toLowerCase() !== 'system') {
+        const { data: existingContact } = await supabase
+          .from('contacts')
+          .select('name')
+          .eq('id', contactId)
+          .maybeSingle();
+
+        const existingName = (existingContact?.name || '').trim();
+        const isExistingNumeric = !existingName || /^\d+$/.test(existingName.replace(/[\s\+\-\(\)]/g, ''));
+        const isNewNumeric = /^\d+$/.test(update.name.replace(/[\s\+\-\(\)]/g, ''));
+
+        // If new name is non-numeric, or if existing contact has no real name yet, update it
+        if (!isNewNumeric || isExistingNumeric) {
+          contactUpdate.name = update.name;
+        }
+      }
+
       if (update.avatar) contactUpdate.avatar_url = update.avatar;
 
-      await supabase.from('contacts').update(contactUpdate).eq('id', contactId);
+      if (Object.keys(contactUpdate).length > 0) {
+        await supabase.from('contacts').update(contactUpdate).eq('id', contactId);
+      }
     }
 
     // 2. Get or create conversation for (tenantId, channelId, contactId)
@@ -346,64 +402,75 @@ export async function hasMessage(providerMessageId: string): Promise<boolean> {
   }
 }
 
-export async function getMessages(chatId?: string): Promise<Message[]> {
+export async function getMessages(chatId?: string, options?: { limit?: number; offset?: number }): Promise<Message[]> {
   try {
     const supabase = getSupabaseAdmin();
-    const { tenantId, channelId } = await ensureDefaultTenantAndChannel();
+    const { tenantId } = await ensureDefaultTenantAndChannel();
 
     let conversationIdFilter: string | undefined;
 
     if (chatId) {
-      // Resolve conversation by chatId (JID)
-      const { data: cc } = await supabase
-        .from('contact_channels')
-        .select('contact_id')
-        .eq('tenant_id', tenantId)
-        .eq('channel_id', channelId)
-        .eq('external_id', chatId)
-        .maybeSingle();
-
-      if (cc) {
-        const { data: convo } = await supabase
+      // 1. Check if chatId is a direct conversation UUID
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(chatId);
+      if (isUuid) {
+        const { data: directConvo } = await supabase
           .from('conversations')
           .select('id')
           .eq('tenant_id', tenantId)
-          .eq('channel_id', channelId)
-          .eq('contact_id', cc.contact_id)
+          .eq('id', chatId)
           .maybeSingle();
 
-        if (convo) {
-          conversationIdFilter = convo.id;
-        } else {
-          return [];
+        if (directConvo) {
+          conversationIdFilter = directConvo.id;
         }
-      } else {
+      }
+
+      // 2. Fallback: Search by WhatsApp JID / contact phone
+      if (!conversationIdFilter) {
+        const { data: contactChannel } = await supabase
+          .from('contact_channels')
+          .select('contact_id')
+          .eq('tenant_id', tenantId)
+          .eq('external_id', chatId)
+          .maybeSingle();
+
+        if (contactChannel) {
+          const { data: convo } = await supabase
+            .from('conversations')
+            .select('id')
+            .eq('tenant_id', tenantId)
+            .eq('contact_id', contactChannel.contact_id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (convo) {
+            conversationIdFilter = convo.id;
+          }
+        }
+      }
+
+      // If specific chatId was requested but no conversation was found, return empty array immediately
+      if (!conversationIdFilter) {
         return [];
       }
     }
 
     let query = supabase
       .from('messages')
-      .select(`
-        id,
-        provider_message_id,
-        from_me,
-        sender_name,
-        text,
-        created_at,
-        conversations (
-          contacts (
-            contact_channels (
-              external_id
-            )
-          )
-        )
-      `)
+      .select('id, provider_message_id, from_me, sender_name, text, created_at, metadata')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: true });
 
     if (conversationIdFilter) {
       query = query.eq('conversation_id', conversationIdFilter);
+    }
+
+    if (options?.limit) {
+      query = query.limit(options.limit);
+    }
+    if (options?.offset) {
+      query = query.range(options.offset, options.offset + (options.limit || 100) - 1);
     }
 
     const { data: msgs, error } = await query;
@@ -415,17 +482,16 @@ export async function getMessages(chatId?: string): Promise<Message[]> {
     if (!msgs) return [];
 
     return msgs.map((m: any) => {
-      const externalId =
-        m.conversations?.contacts?.contact_channels?.[0]?.external_id || chatId || 'unknown';
       const timestamp = new Date(m.created_at).getTime();
+      const msgChatId = m.metadata?.chatId || chatId || 'unknown';
 
       return {
         id: m.provider_message_id || m.id,
-        chatId: externalId,
+        chatId: msgChatId,
         fromMe: m.from_me,
         text: m.text,
         timestamp,
-        senderName: m.sender_name || (m.from_me ? 'Me' : externalId.split('@')[0]),
+        senderName: m.sender_name || (m.from_me ? 'Me' : msgChatId.split('@')[0]),
       };
     });
   } catch (err) {
@@ -439,61 +505,22 @@ export async function addMessage(message: Message): Promise<{ success: boolean; 
     const supabase = getSupabaseAdmin();
     const { tenantId, channelId } = await ensureDefaultTenantAndChannel();
 
-    // 1. Update conversation metadata: increment unread for inbound (!fromMe), reset to 0 for outbound (fromMe)
-    if (!message.fromMe) {
-      await updateConversation(message.chatId, {
-        name: message.senderName,
-        lastMessage: { text: message.text, timestamp: message.timestamp },
-        incrementUnread: true,
-      });
-    } else {
-      await updateConversation(message.chatId, {
-        name: message.senderName,
-        lastMessage: { text: message.text, timestamp: message.timestamp },
-        unreadCount: 0,
-      });
-    }
-
-    // 2. Fetch conversation ID
-    const { data: cc } = await supabase
-      .from('contact_channels')
-      .select('contact_id')
-      .eq('tenant_id', tenantId)
-      .eq('channel_id', channelId)
-      .eq('external_id', message.chatId)
-      .maybeSingle();
-
-    if (!cc?.contact_id) {
-      console.error('[DIAGNOSTIC] Failed to find contact channel for message:', message.chatId);
-      return { success: false, duplicate: false };
-    }
-
-    const { data: convo } = await supabase
-      .from('conversations')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('channel_id', channelId)
-      .eq('contact_id', cc.contact_id)
-      .maybeSingle();
-
-    if (!convo?.id) {
-      console.error('[DIAGNOSTIC] Failed to find conversation for message:', message.chatId);
-      return { success: false, duplicate: false };
-    }
-
     const createdAt = new Date(message.timestamp).toISOString();
     const senderType = message.fromMe ? 'user' : 'contact';
+    const senderName = message.senderName || (message.fromMe ? 'Me' : message.chatId.split('@')[0]);
 
-    const { error } = await supabase.from('messages').insert({
-      tenant_id: tenantId,
-      conversation_id: convo.id,
-      provider_message_id: message.id,
-      sender_type: senderType,
-      from_me: message.fromMe,
-      sender_name: message.senderName || (message.fromMe ? 'Me' : message.chatId.split('@')[0]),
-      text: message.text,
-      metadata: { chatId: message.chatId, provider: 'baileys' },
-      created_at: createdAt,
+    // Call atomic database procedure with transaction advisory lock and deduplication
+    const { data, error } = await supabase.rpc('add_message_atomic', {
+      p_tenant_id: tenantId,
+      p_channel_id: channelId,
+      p_chat_id: message.chatId,
+      p_provider_message_id: message.id,
+      p_sender_type: senderType,
+      p_from_me: message.fromMe,
+      p_sender_name: senderName,
+      p_text: message.text,
+      p_metadata: { chatId: message.chatId, provider: 'baileys' },
+      p_created_at: createdAt,
     });
 
     if (error) {
@@ -501,8 +528,13 @@ export async function addMessage(message: Message): Promise<{ success: boolean; 
         console.warn(`[DIAGNOSTIC] Atomic idempotency: Duplicate provider_message_id rejected by DB: ${message.id}`);
         return { success: false, duplicate: true };
       }
-      console.error('[DIAGNOSTIC] Failed to insert message into Supabase:', error);
+      console.error('[DIAGNOSTIC] Failed to insert message via add_message_atomic:', error);
       return { success: false, duplicate: false };
+    }
+
+    if (data?.duplicate) {
+      console.warn(`[DIAGNOSTIC] Atomic idempotency: Duplicate provider_message_id rejected by DB: ${message.id}`);
+      return { success: false, duplicate: true };
     }
 
     return { success: true, duplicate: false };
@@ -1044,24 +1076,19 @@ export async function getTeamMembers(): Promise<TeamMember[]> {
     }
 
     if (!data || data.length === 0) {
-      const seededMembers: TeamMember[] = [];
-      for (const def of DEFAULT_INITIAL_MEMBERS) {
-        const created = await createTeamMember(def);
-        seededMembers.push(created);
-      }
-      return seededMembers;
+      return [];
     }
 
     return data.map((m: any) => ({
       id: m.id,
       fullName: m.full_name,
-      email: m.email || undefined,
-      avatarUrl: m.avatar_url || undefined,
-      role: m.role || 'agent',
-      status: m.status || 'online',
+      email: m.email,
+      avatarUrl: m.avatar_url,
+      role: m.role as any,
+      status: m.status as any,
       assignedQueues: m.assigned_queues || [],
-      createdAt: new Date(m.created_at).getTime(),
-      updatedAt: m.updated_at ? new Date(m.updated_at).getTime() : undefined,
+      createdAt: m.created_at,
+      updatedAt: m.updated_at,
     }));
   } catch (err) {
     console.error('Error in getTeamMembers:', err);
@@ -1071,62 +1098,68 @@ export async function getTeamMembers(): Promise<TeamMember[]> {
 
 export async function getTeamMember(id: string): Promise<TeamMember | undefined> {
   const members = await getTeamMembers();
-  return members.find(m => m.id === id);
+  return members.find((m) => m.id === id);
 }
 
 export async function createTeamMember(
-  data: Omit<TeamMember, 'id' | 'createdAt' | 'updatedAt'>
+  member: Omit<TeamMember, 'id' | 'createdAt' | 'updatedAt'>
 ): Promise<TeamMember> {
-  const supabase = getSupabaseAdmin();
-  const { tenantId } = await ensureDefaultTenantAndChannel();
+  try {
+    const supabase = getSupabaseAdmin();
+    const { tenantId } = await ensureDefaultTenantAndChannel();
 
-  const { data: newRow, error } = await supabase
-    .from('team_members')
-    .insert({
-      tenant_id: tenantId,
-      full_name: data.fullName.trim(),
-      email: data.email ? data.email.trim() : null,
-      avatar_url: data.avatarUrl || null,
-      role: data.role || 'agent',
-      status: data.status || 'online',
-      assigned_queues: data.assignedQueues || [],
-    })
-    .select('*')
-    .single();
+    const { data, error } = await supabase
+      .from('team_members')
+      .insert({
+        tenant_id: tenantId,
+        full_name: member.fullName,
+        email: member.email,
+        avatar_url: member.avatarUrl,
+        role: member.role,
+        status: member.status || 'offline',
+        assigned_queues: member.assignedQueues || [],
+      })
+      .select('*')
+      .single();
 
-  if (error || !newRow) {
-    console.error('Failed to insert team member in Supabase:', error);
-    throw new Error('Failed to create team member');
+    if (error || !data) {
+      console.error('Failed to create team member in Supabase:', error);
+      throw error || new Error('Failed to create team member');
+    }
+
+    return {
+      id: data.id,
+      fullName: data.full_name,
+      email: data.email,
+      avatarUrl: data.avatar_url,
+      role: data.role as any,
+      status: data.status as any,
+      assignedQueues: data.assigned_queues || [],
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
+  } catch (err) {
+    console.error('Error in createTeamMember:', err);
+    throw err;
   }
-
-  return {
-    id: newRow.id,
-    fullName: newRow.full_name,
-    email: newRow.email || undefined,
-    avatarUrl: newRow.avatar_url || undefined,
-    role: newRow.role,
-    status: newRow.status,
-    assignedQueues: newRow.assigned_queues || [],
-    createdAt: new Date(newRow.created_at).getTime(),
-    updatedAt: newRow.updated_at ? new Date(newRow.updated_at).getTime() : undefined,
-  };
 }
 
 export async function updateTeamMember(
   id: string,
-  update: Partial<TeamMember>
+  update: Partial<Omit<TeamMember, 'id' | 'createdAt' | 'updatedAt'>>
 ): Promise<void> {
   try {
     const supabase = getSupabaseAdmin();
     const { tenantId } = await ensureDefaultTenantAndChannel();
 
-    const payload: any = { updated_at: new Date().toISOString() };
-    if (update.fullName !== undefined) payload.full_name = update.fullName.trim();
-    if (update.email !== undefined) payload.email = update.email ? update.email.trim() : null;
+    const payload: any = {};
+    if (update.fullName !== undefined) payload.full_name = update.fullName;
+    if (update.email !== undefined) payload.email = update.email;
     if (update.avatarUrl !== undefined) payload.avatar_url = update.avatarUrl;
     if (update.role !== undefined) payload.role = update.role;
     if (update.status !== undefined) payload.status = update.status;
     if (update.assignedQueues !== undefined) payload.assigned_queues = update.assignedQueues;
+    payload.updated_at = new Date().toISOString();
 
     const { error } = await supabase
       .from('team_members')
@@ -1177,7 +1210,7 @@ const DEFAULT_HANDOFF_RULES: Array<Omit<HandoffRule, 'id' | 'createdAt' | 'updat
       keywords: ['human', 'agent', 'operator', 'representative', 'real person', 'talk to someone', 'urgent', 'person', 'supervisor', 'speak to a human'],
     },
     actions: {
-      assignToUserId: 'user_agent_sarah',
+      assignToUserId: undefined,
       autoPauseAi: true,
       transitionMessage: "I am connecting you with one of our human support specialists who will assist you shortly.",
       notificationType: 'in_app',
@@ -1193,7 +1226,7 @@ const DEFAULT_HANDOFF_RULES: Array<Omit<HandoffRule, 'id' | 'createdAt' | 'updat
       threshold: 0.65,
     },
     actions: {
-      assignToUserId: 'user_admin_01',
+      assignToUserId: undefined,
       autoPauseAi: true,
       transitionMessage: "I'm escalating this conversation to a team member to make sure you get accurate information.",
       notificationType: 'in_app',
@@ -1209,7 +1242,7 @@ const DEFAULT_HANDOFF_RULES: Array<Omit<HandoffRule, 'id' | 'createdAt' | 'updat
       intents: ['complaint_frustration', 'billing_refund', 'cancellation', 'technical_escalation'],
     },
     actions: {
-      assignToUserId: 'user_agent_david',
+      assignToUserId: undefined,
       autoPauseAi: true,
       transitionMessage: "I understand this is important. I've flagged this for our senior team member who is reviewing your chat now.",
       notificationType: 'in_app',
@@ -1222,12 +1255,12 @@ const DEFAULT_HANDOFF_RULES: Array<Omit<HandoffRule, 'id' | 'createdAt' | 'updat
     isEnabled: true,
     ruleType: 'consecutive_fallback',
     conditions: {
-      maxFallbacks: 2,
+      consecutiveFallbacks: 2,
     },
     actions: {
-      assignToUserId: 'user_admin_01',
+      assignToUserId: undefined,
       autoPauseAi: true,
-      transitionMessage: "Let me bring in a specialist to help resolve this for you.",
+      transitionMessage: "I want to ensure you get the best possible help. I'm connecting you with a human team member.",
       notificationType: 'in_app',
     },
     priority: 70,
@@ -1727,11 +1760,22 @@ export async function getContactProfile(chatId: string): Promise<ContactProfile 
     if (cErr || !contact) return undefined;
 
     // Get message count
-    const { count: msgCount } = await supabase
-      .from('messages')
-      .select('id', { count: 'exact', head: true })
+    let msgCount = 0;
+    const { data: convo } = await supabase
+      .from('conversations')
+      .select('id')
       .eq('tenant_id', tenantId)
-      .eq('chat_id', chatId);
+      .eq('contact_id', cc.contact_id)
+      .maybeSingle();
+
+    if (convo) {
+      const { count } = await supabase
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId)
+        .eq('conversation_id', convo.id);
+      msgCount = count || 0;
+    }
 
     return {
       id: contact.id,

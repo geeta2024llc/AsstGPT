@@ -15,7 +15,12 @@ export async function GET(
       return NextResponse.json({ message: 'Webhook not found' }, { status: 404 });
     }
 
-    return NextResponse.json(webhook);
+    const masked = {
+      ...webhook,
+      secret: webhook.secret ? `${webhook.secret.slice(0, 6)}••••••••` : undefined,
+    };
+
+    return NextResponse.json(masked);
   } catch (error) {
     console.error('Failed to get webhook:', error);
     return NextResponse.json({ message: 'Failed to fetch webhook' }, { status: 500 });

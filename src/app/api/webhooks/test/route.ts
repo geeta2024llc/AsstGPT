@@ -6,6 +6,35 @@ import type { WebhookEventType, WebhookPayload } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
+function isPrivateOrLocalHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().trim();
+  if (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '0.0.0.0' ||
+    host === '::1' ||
+    host === '[::1]' ||
+    host === '169.254.169.254' ||
+    host.endsWith('.internal') ||
+    host.endsWith('.local')
+  ) {
+    return true;
+  }
+
+  // IPv4 private ranges: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 169.254.0.0/16
+  const parts = host.split('.').map(Number);
+  if (parts.length === 4 && parts.every((p) => !isNaN(p) && p >= 0 && p <= 255)) {
+    if (parts[0] === 10) return true;
+    if (parts[0] === 127) return true;
+    if (parts[0] === 169 && parts[1] === 254) return true;
+    if (parts[0] === 192 && parts[1] === 168) return true;
+    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+    if (parts[0] === 0) return true;
+  }
+
+  return false;
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -15,10 +44,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'URL and secret are required for testing' }, { status: 400 });
     }
 
+    let parsedUrl: URL;
     try {
-      new URL(url);
+      parsedUrl = new URL(url);
     } catch {
       return NextResponse.json({ message: 'Invalid endpoint URL' }, { status: 400 });
+    }
+
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      return NextResponse.json({ message: 'Only HTTP and HTTPS webhook endpoints are permitted' }, { status: 400 });
+    }
+
+    if (isPrivateOrLocalHost(parsedUrl.hostname)) {
+      return NextResponse.json(
+        { message: 'Security Exception: Cannot dispatch test webhooks to private or local network addresses' },
+        { status: 400 }
+      );
     }
 
     const payload: WebhookPayload = {
@@ -40,10 +81,8 @@ export async function POST(request: Request) {
     const timestampHeader = String(payload.timestamp);
 
     const startTime = Date.now();
-    let responseText = '';
     let statusCode = 0;
     let success = false;
-    let headersObj: Record<string, string> = {};
 
     try {
       const response = await fetch(url, {
@@ -61,15 +100,9 @@ export async function POST(request: Request) {
 
       statusCode = response.status;
       success = response.ok;
-      responseText = (await response.text()).slice(0, 1000); // cap to 1KB
-
-      response.headers.forEach((val, key) => {
-        headersObj[key] = val;
-      });
     } catch (fetchErr: any) {
       statusCode = 0;
       success = false;
-      responseText = `Request Error: ${fetchErr.message}`;
     }
 
     const durationMs = Date.now() - startTime;
@@ -81,7 +114,7 @@ export async function POST(request: Request) {
     await addLog({
       user: 'Administrator',
       action: 'Webhook Test Fired',
-      details: `Test dispatch to ${url} returned HTTP ${statusCode} in ${durationMs}ms`,
+      details: `Test dispatch to ${parsedUrl.hostname} returned HTTP ${statusCode} in ${durationMs}ms`,
       type: success ? 'info' : 'warning',
     });
 
@@ -89,10 +122,8 @@ export async function POST(request: Request) {
       success,
       statusCode,
       durationMs,
-      responseBody: responseText,
-      responseHeaders: headersObj,
+      statusMessage: success ? 'Webhook endpoint responded successfully' : `Endpoint returned HTTP ${statusCode}`,
       payloadSent: payload,
-      signatureSent: `sha256=${signature}`,
     });
   } catch (error: any) {
     console.error('Failed to run webhook test:', error);

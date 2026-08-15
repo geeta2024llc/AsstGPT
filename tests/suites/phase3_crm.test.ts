@@ -123,6 +123,13 @@ export async function runPhase3TestSuite(): Promise<boolean> {
       console.log('   - Conversation List CRM Hydration: ❌ FAIL (Convo not found)');
       allPassed = false;
     }
+
+    // Cleanup test conversation & contact
+    const sb = (await import('../../src/lib/supabase')).getSupabaseAdmin();
+    const { data: cc } = await sb.from('contact_channels').select('contact_id').eq('external_id', testChatId).maybeSingle();
+    if (cc?.contact_id) {
+      await sb.from('contacts').delete().eq('id', cc.contact_id);
+    }
   } catch (err) {
     console.error('   - Hydration error:', err);
     allPassed = false;

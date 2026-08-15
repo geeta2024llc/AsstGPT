@@ -19,7 +19,7 @@ export interface FaqMatchResult {
 /**
  * Common English and Romanized Nepali synonym map for high-accuracy intent matching.
  */
-const SYNONYM_MAP: Record<string, string[]> = {
+export const SYNONYM_MAP: Record<string, string[]> = {
   // Pricing & Costs
   price: ['cost', 'pricing', 'fee', 'plan', 'rate', 'charge', 'kati', 'paisa'],
   kati: ['price', 'cost', 'pricing', 'rate', 'fee', 'charge'],
@@ -60,6 +60,19 @@ const SYNONYM_MAP: Record<string, string[]> = {
   services: ['service', 'product', 'products', 'offer', 'k'],
   product: ['products', 'service', 'services', 'item'],
   products: ['product', 'service', 'services', 'items'],
+
+  // Cancellation, Refunds & Subscriptions
+  cancel: ['cancellation', 'refund', 'terminate', 'stop', 'policy', 'subscription'],
+  cancellation: ['cancel', 'refund', 'stop', 'policy', 'subscription'],
+  refund: ['money', 'cancel', 'cancellation', 'return', 'policy'],
+  subscription: ['plan', 'subscribe', 'pricing', 'cancel', 'package'],
+  subscribe: ['plan', 'subscription', 'signup'],
+
+  // Delivery & Shipping
+  deliver: ['delivery', 'shipping', 'ship'],
+  delivery: ['deliver', 'shipping', 'ship'],
+  ship: ['delivery', 'shipping', 'dispatch'],
+  shipping: ['ship', 'delivery', 'dispatch'],
 };
 
 const STOP_WORDS = new Set([

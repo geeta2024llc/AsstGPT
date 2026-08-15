@@ -14,7 +14,11 @@ export async function GET(
     if (!chatId) {
       return NextResponse.json({ message: 'chatId is required' }, { status: 400 });
     }
-    const messages = await getMessages(chatId);
+    const url = new URL(request.url);
+    const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!, 10) : undefined;
+    const offset = url.searchParams.get('offset') ? parseInt(url.searchParams.get('offset')!, 10) : undefined;
+
+    const messages = await getMessages(chatId, { limit, offset });
     return NextResponse.json(messages);
   } catch (error) {
     console.error('Failed to fetch messages:', error);

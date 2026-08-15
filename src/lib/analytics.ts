@@ -57,7 +57,7 @@ export async function getAnalyticsData(range: 'today' | '7d' | '30d' = '7d'): Pr
   const startDate = subDays(startOfDay(now), days - 1);
   const startDateIso = startDate.toISOString();
 
-  // Execute high-performance tenant-isolated queries in parallel
+  // Execute high-performance tenant-isolated queries in parallel with date bounding
   const [
     convosCountRes,
     activeConvosCountRes,
@@ -72,33 +72,102 @@ export async function getAnalyticsData(range: 'today' | '7d' | '30d' = '7d'): Pr
     convosListRes,
     messagesListRes,
     auditLogsRes,
+    errorsCountRes,
   ] = await Promise.all([
-    // 1. Total conversations
-    supabase.from('conversations').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId),
-    // 2. Active conversations (unread > 0 or unassigned / open)
-    supabase.from('conversations').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).or('unread_count.gt.0,status.eq.open'),
-    // 3. Resolved conversations
-    supabase.from('conversations').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('status', 'resolved'),
-    // 4. Total messages
-    supabase.from('messages').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId),
-    // 5. Incoming messages
-    supabase.from('messages').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('from_me', false),
-    // 6. Outgoing messages
-    supabase.from('messages').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('from_me', true),
-    // 7. AI response logs
-    supabase.from('audit_logs').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).in('action', ['Auto-response Sent', 'AI Response Generated']),
-    // 8. AI failure logs
-    supabase.from('audit_logs').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).in('action', ['AI Response Failed', 'Auto-response Failed']),
-    // 9. Active agents count
-    supabase.from('agents').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('status', 'active'),
+    // 1. Total conversations within date range
+    supabase
+      .from('conversations')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .gte('created_at', startDateIso),
+    // 2. Active conversations within date range (excluding resolved)
+    supabase
+      .from('conversations')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .neq('status', 'resolved')
+      .or('unread_count.gt.0,status.eq.open')
+      .gte('created_at', startDateIso),
+    // 3. Resolved conversations within date range
+    supabase
+      .from('conversations')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .eq('status', 'resolved')
+      .gte('created_at', startDateIso),
+    // 4. Total messages within date range
+    supabase
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .gte('created_at', startDateIso),
+    // 5. Incoming messages within date range
+    supabase
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .eq('from_me', false)
+      .gte('created_at', startDateIso),
+    // 6. Outgoing messages within date range
+    supabase
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .eq('from_me', true)
+      .gte('created_at', startDateIso),
+    // 7. AI response logs within date range
+    supabase
+      .from('audit_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .in('action', ['Auto-response Sent', 'AI Response Generated'])
+      .gte('created_at', startDateIso),
+    // 8. AI failure logs within date range
+    supabase
+      .from('audit_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .in('action', ['AI Response Failed', 'Auto-response Failed'])
+      .gte('created_at', startDateIso),
+    // 9. Active agents count (state-based, all-time active)
+    supabase
+      .from('agents')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .eq('status', 'active'),
     // 10. All agents list
-    supabase.from('agents').select('id, name, mode, status, created_at').eq('tenant_id', tenantId),
-    // 11. Convos bounded list for date trends
-    supabase.from('conversations').select('id, assigned_agent_id, unread_count, status, created_at, updated_at').eq('tenant_id', tenantId),
+    supabase
+      .from('agents')
+      .select('id, name, mode, status, created_at')
+      .eq('tenant_id', tenantId),
+    // 11. Convos bounded list for date trends with is_bot_paused
+    supabase
+      .from('conversations')
+      .select('id, assigned_agent_id, is_bot_paused, unread_count, status, created_at, updated_at')
+      .eq('tenant_id', tenantId)
+      .gte('created_at', startDateIso),
     // 12. Messages within date range for trend chart
-    supabase.from('messages').select('id, from_me, created_at, sender_name').eq('tenant_id', tenantId).gte('created_at', startDateIso).order('created_at', { ascending: true }),
+    supabase
+      .from('messages')
+      .select('id, from_me, created_at, sender_name')
+      .eq('tenant_id', tenantId)
+      .gte('created_at', startDateIso)
+      .order('created_at', { ascending: true }),
     // 13. Audit logs within date range
-    supabase.from('audit_logs').select('id, user_name, action, details, log_type, created_at').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(200),
+    supabase
+      .from('audit_logs')
+      .select('id, user_name, action, details, log_type, created_at')
+      .eq('tenant_id', tenantId)
+      .gte('created_at', startDateIso)
+      .order('created_at', { ascending: false })
+      .limit(1000),
+    // 14. Total error logs count within date range
+    supabase
+      .from('audit_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .eq('log_type', 'error')
+      .gte('created_at', startDateIso),
   ]);
 
   const totalConversations = convosCountRes.count || 0;
@@ -164,23 +233,28 @@ export async function getAnalyticsData(range: 'today' | '7d' | '30d' = '7d'): Pr
   }));
 
   // --- Open vs Resolved Ratio ---
-  const openCount = totalConversations - resolvedConversations;
-  const openPercentage = totalConversations > 0 ? Math.round((openCount / totalConversations) * 100) : 100;
+  const openCount = Math.max(0, totalConversations - resolvedConversations);
+  const openPercentage = totalConversations > 0 ? Math.round((openCount / totalConversations) * 100) : 0;
   const avgMessagesPerConversation = totalConversations > 0 ? Number((totalMessages / totalConversations).toFixed(1)) : 0;
 
   // --- AI Performance ---
   const totalAIAttempts = aiResponses + aiResponseFailures;
-  const aiSuccessRate = totalAIAttempts > 0 ? Math.round((aiResponses / totalAIAttempts) * 100) : 100;
+  const aiSuccessRate = totalAIAttempts > 0 ? Math.round((aiResponses / totalAIAttempts) * 100) : 0;
   
-  const currentHumanTakeoverCount = convos.filter((c: any) => c.assigned_agent_id === null || c.assigned_agent_id === '').length;
+  // Authoritative Human Takeover calculation checking is_bot_paused
+  const currentHumanTakeoverCount = convos.filter(
+    (c: any) => c.is_bot_paused === true || c.assigned_agent_id === null || c.assigned_agent_id === ''
+  ).length;
   
   const logs = auditLogsRes.data || [];
-  const humanTakeoverLogs = logs.filter((l: any) => l.action === 'AI Response Skipped');
+  const humanTakeoverLogs = logs.filter(
+    (l: any) => l.action === 'AI Response Skipped' || (l.action && l.action.toLowerCase().includes('takeover'))
+  );
   const humanTakeoverCount = humanTakeoverLogs.length || currentHumanTakeoverCount;
 
   const totalHandled = aiResponses + humanResponses;
-  const aiRatioPct = totalHandled > 0 ? Math.round((aiResponses / totalHandled) * 100) : 100;
-  const aiVsHumanRatio = `${aiRatioPct}% AI / ${100 - aiRatioPct}% Human`;
+  const aiRatioPct = totalHandled > 0 ? Math.round((aiResponses / totalHandled) * 100) : 0;
+  const aiVsHumanRatio = `${aiRatioPct}% AI / ${Math.max(0, 100 - aiRatioPct)}% Human`;
 
   // --- Average AI Response Latency Calculation ---
   let avgResponseTimeSeconds: number | null = null;
@@ -319,7 +393,7 @@ export async function getAnalyticsData(range: 'today' | '7d' | '30d' = '7d'): Pr
       avgResponseTimeFormatted,
     },
     errorAnalytics: {
-      totalErrors: errorLogs.length,
+      totalErrors: errorsCountRes.count || 0,
       byCategory: errorBreakdown,
       recentErrors,
     },

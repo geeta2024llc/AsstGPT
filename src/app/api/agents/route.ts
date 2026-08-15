@@ -3,10 +3,25 @@ import { NextResponse } from 'next/server';
 import { addAgent, getAgents, addLog } from '@/lib/db';
 import type { Agent } from '@/types';
 
+function maskAgentApiKey(agent: Agent): Agent {
+  if (agent.aiSettings?.apiKey) {
+    const key = agent.aiSettings.apiKey;
+    return {
+      ...agent,
+      aiSettings: {
+        ...agent.aiSettings,
+        apiKey: key.length > 8 ? `${key.slice(0, 4)}••••••••${key.slice(-4)}` : '••••••••',
+      },
+    };
+  }
+  return agent;
+}
+
 export async function GET() {
   try {
     const agents = await getAgents();
-    return NextResponse.json(agents);
+    const masked = agents.map(maskAgentApiKey);
+    return NextResponse.json(masked);
   } catch (error) {
     console.error('Failed to get agents:', error);
     return NextResponse.json({ message: 'Failed to get agents' }, { status: 500 });

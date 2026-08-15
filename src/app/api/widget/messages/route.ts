@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import * as db from '@/lib/db';
 import { generateAIResponse, retrieveRelevantKnowledgeContext } from '@/lib/ai';
+import { findDirectFaqMatch, dynamicResponseCache } from '@/lib/faq-matcher';
 import { evaluateHandoffRules } from '@/lib/handoff-engine';
 import { dispatchWebhookEvent } from '@/lib/webhook-dispatcher';
 import { analyzeMessageSentiment } from '@/lib/ai-insights';
@@ -170,21 +171,49 @@ export async function POST(request: Request) {
       agents[0];
 
     let replyText = 'Thank you for reaching out. How can I assist you further?';
+    let answeredFromFastPath = false;
 
     if (activeAgent?.aiSettings) {
+      // Step A: Fast-path FAQ matching from knowledge base ($0 LLM cost)
       try {
-        const { context: ragContext } = await retrieveRelevantKnowledgeContext(
-          cleanText,
-          activeAgent.aiSettings.knowledgeFileIds
-        );
+        const directFaq = await findDirectFaqMatch(cleanText, activeAgent.aiSettings.knowledgeFileIds);
+        if (directFaq.matched && directFaq.answer) {
+          replyText = directFaq.answer;
+          answeredFromFastPath = true;
+        }
+      } catch (faqErr) {
+        console.warn('Widget FAQ match error:', faqErr);
+      }
 
-        replyText = await generateAIResponse(
-          cleanText,
-          activeAgent.aiSettings,
-          history
-        );
-      } catch (aiErr) {
-        console.error('Widget AI generation error:', aiErr);
+      // Step B: Check Dynamic In-Memory Response Cache ($0 LLM cost)
+      if (!answeredFromFastPath) {
+        const cached = dynamicResponseCache.get(cleanText);
+        if (cached) {
+          replyText = cached;
+          answeredFromFastPath = true;
+        }
+      }
+
+      // Step C: Fall back to LLM generation only on miss
+      if (!answeredFromFastPath) {
+        try {
+          const { context: ragContext } = await retrieveRelevantKnowledgeContext(
+            cleanText,
+            activeAgent.aiSettings.knowledgeFileIds
+          );
+
+          replyText = await generateAIResponse(
+            cleanText,
+            activeAgent.aiSettings,
+            history
+          );
+
+          if (replyText) {
+            dynamicResponseCache.set(cleanText, replyText);
+          }
+        } catch (aiErr) {
+          console.error('Widget AI generation error:', aiErr);
+        }
       }
     }
 

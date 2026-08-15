@@ -43,23 +43,21 @@ function getHostBrowserDescriptor(): [string, string, string] {
   }
 }
 
-type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
+export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 
-interface WhatsAppClientState {
+export interface WhatsAppClientState {
   sock: WASocket | null;
   status: ConnectionStatus;
   qr: string | null;
   account: { id: string; name: string } | null;
   lastDisconnect: { reason: string; date: string } | null;
   connectingSince: number | null;
-  // Set synchronously (before any await) at the top of init() so a second
-  // concurrent call — from the watchdog, from POST /api/whatsapp/init, or
-  // from a reconnect — cannot slip past the `state.sock` guard during the
-  // real I/O gap (useMultiFileAuthState + fetchLatestBaileysVersion) before
-  // state.sock is actually assigned. Without this, two live Baileys sockets
-  // could exist against the same auth directory at once, racing to write
-  // credentials/keys during an active pairing handshake.
   initializing: boolean;
+  reconnectAttempts: number;
+}
+
+export function isConversationPaused(convo?: any): boolean {
+  return Boolean(convo && (convo.isBotPaused === true || convo.is_bot_paused === true));
 }
 
 // If a connection attempt hasn't opened (or closed) within this window, treat the
@@ -93,15 +91,39 @@ if (!global.whatsappState) {
         lastDisconnect: null,
         connectingSince: null,
         initializing: false,
+        reconnectAttempts: 0,
     };
 }
 
 const state = global.whatsappState;
 const inFlightMessageIds = new Set<string>();
+const chatMessageQueues = new Map<string, Promise<void>>();
+const consecutiveFallbacksMap = new Map<string, number>();
+
+export function enqueueChatProcessing(chatId: string, task: () => Promise<void>): Promise<void> {
+  const currentQueue = chatMessageQueues.get(chatId) || Promise.resolve();
+  const nextQueue = currentQueue
+    .then(() => task())
+    .catch((err) => console.error(`[QUEUE ERROR] Error processing queued message for ${chatId}:`, err))
+    .finally(() => {
+      if (chatMessageQueues.get(chatId) === nextQueue) {
+        chatMessageQueues.delete(chatId);
+      }
+    });
+  chatMessageQueues.set(chatId, nextQueue);
+  return nextQueue;
+}
 
 async function handleMessage(msg: WAMessage) {
   try {
-    if (!msg.message || !msg.key.remoteJid || isJidGroup(msg.key.remoteJid)) {
+    if (
+      !msg.message ||
+      !msg.key.remoteJid ||
+      isJidGroup(msg.key.remoteJid) ||
+      msg.key.remoteJid === 'status@broadcast' ||
+      msg.key.remoteJid.endsWith('@broadcast') ||
+      msg.key.remoteJid.endsWith('@newsletter')
+    ) {
       return;
     }
 
@@ -226,8 +248,8 @@ async function handleMessage(msg: WAMessage) {
     }
 
     // Derive a sensible sender name.
-    const rawName = (msg.pushName || '').trim();
-    const senderName = rawName && rawName !== '.' ? rawName : chatId.split('@')[0];
+    const rawName = (msg.pushName || (msg as any).verifiedBizName || '').trim();
+    const senderName = rawName && rawName !== '.' && rawName.toLowerCase() !== 'me' ? rawName : chatId.split('@')[0];
 
     const message: Message = {
       id: providerMessageId,
@@ -303,10 +325,13 @@ async function handleMessage(msg: WAMessage) {
       .slice(-6)
       .map(m => ({ fromMe: m.fromMe, text: m.text }));
 
-    // 5. Evaluate Automated Pre-Generation Handoff Rules (Keywords, Intents)
+    const currentFallbacks = consecutiveFallbacksMap.get(chatId) || 0;
+
+    // 5. Evaluate Automated Pre-Generation Handoff Rules (Keywords, Intents, Consecutive Fallbacks)
     const preHandoff = await evaluateHandoffRules({
       messageText: messageContent,
       history,
+      consecutiveFallbacks: currentFallbacks,
     });
 
     if (preHandoff.shouldHandoff && preHandoff.matchedRule) {
@@ -346,86 +371,51 @@ async function handleMessage(msg: WAMessage) {
       if (rule.actions.transitionMessage) {
         try {
           await sendMessage(chatId, rule.actions.transitionMessage);
-          await db.addLog({
-            user: 'System',
-            action: 'Handoff Transition Message Sent',
-            details: rule.actions.transitionMessage,
-            type: 'info',
-          });
-        } catch (msgErr) {
-          console.error('Failed to send handoff transition message:', msgErr);
+        } catch (sendErr) {
+          console.error('Failed to send automated transition message:', sendErr);
         }
       }
-
       return;
     }
 
-    // 6. Agent Selection Logic
-    let agent: Agent | undefined;
-    if (convo?.assignedAgentId) {
-      agent = await db.getAgent(convo.assignedAgentId);
-    }
-    if (!agent) {
-      const agents = await db.getAgents();
-      agent = agents.find((a) => a.status === 'active') || agents[0];
-      if (agent) {
-        await db.setConversationAssignedAgent(chatId, agent.id);
-      }
-    }
+    // 6. Active Agent Configuration
+    const agents = await db.getAgents();
+    const agent = agents.find((a) => a.id === convo?.assignedAgentId) || agents[0];
 
     if (!agent) {
-      console.warn(`No agent available to respond to conversation ${chatId}.`);
-      await db.addLog({
-        user: 'System',
-        action: 'No Agent Available',
-        details: `No active agent found to handle message from ${chatId}.`,
-        type: 'warning',
-      });
+      console.error('No agent found to process message for chat:', chatId);
       return;
     }
 
-    await db.addLog({
-      user: agent.name,
-      action: 'Agent Selected',
-      details: `Selected agent "${agent.name}" (mode: ${agent.mode}) for ${chatId}`,
-      type: 'info',
-    });
-
-    // 7. Fast-Path Exact FAQ Matcher & Dynamic Semantic Cache (Sub-10ms, $0.00 Cost)
+    // 7. Multi-Tier AI Response Pipeline
     let responseText: string | undefined;
-    let ragContextString = '';
+    let ragContextString: string = '';
 
-    if (agent.mode === 'ai' && !mediaAttachment) {
-      // Step A: Instant High-Confidence FAQ Matcher from Knowledge Base
-      try {
-        const directFaq = await findDirectFaqMatch(messageContent, agent.aiSettings?.knowledgeFileIds);
-        if (directFaq.matched && directFaq.answer) {
-          console.log(`[FAST-PATH FAQ] Direct match for "${messageContent}" from "${directFaq.source}" (${(directFaq.confidence * 100).toFixed(0)}% confidence, ${directFaq.matchType})`);
-          responseText = directFaq.answer;
-          await db.addLog({
-            user: agent.name,
-            action: 'Instant FAQ Match (0ms)',
-            details: `Matched FAQ: "${directFaq.question}" (${(directFaq.confidence * 100).toFixed(0)}% match) -> Answered directly with $0.00 LLM cost`,
-            type: 'success',
-          });
-        }
-      } catch (faqMatchErr) {
-        console.warn('FAQ fast-path matcher error, continuing to cache/LLM:', faqMatchErr);
+    // Step A: Exact/Fuzzy FAQ Match ($0.00 cost, <5ms latency)
+    if (agent.aiSettings && agent.aiSettings.knowledgeFileIds && agent.aiSettings.knowledgeFileIds.length > 0) {
+      const faqMatch = await findDirectFaqMatch(messageContent, agent.aiSettings.knowledgeFileIds);
+      if (faqMatch && faqMatch.answer) {
+        responseText = faqMatch.answer;
+        await db.addLog({
+          user: agent.name,
+          action: 'FAQ Fast-Path Match',
+          details: `Direct answer matched from Q: "${faqMatch.question}" (Source: ${faqMatch.source})`,
+          type: 'info',
+        });
       }
+    }
 
-      // Step B: Check Dynamic In-Memory Response Cache for recent queries
-      if (!responseText) {
-        const cachedResponse = dynamicResponseCache.get(messageContent);
-        if (cachedResponse) {
-          console.log(`[DYNAMIC CACHE] Serving cached response for "${messageContent}"`);
-          responseText = cachedResponse;
-          await db.addLog({
-            user: agent.name,
-            action: 'Dynamic Cache Hit (0ms)',
-            details: `Served cached answer for "${messageContent.slice(0, 60)}" -> $0.00 LLM cost`,
-            type: 'success',
-          });
-        }
+    // Step B: In-Memory Dynamic Response Cache ($0.00 cost, <1ms latency)
+    if (!responseText) {
+      const cached = dynamicResponseCache.get(messageContent);
+      if (cached) {
+        responseText = cached;
+        await db.addLog({
+          user: agent.name,
+          action: 'Dynamic Response Cache Hit',
+          details: `Answer retrieved from in-memory cache for query: "${messageContent.slice(0, 50)}"`,
+          type: 'info',
+        });
       }
     }
 
@@ -438,7 +428,7 @@ async function handleMessage(msg: WAMessage) {
           await db.addLog({
             user: agent.name,
             action: 'RAG Knowledge Retrieved',
-            details: `Retrieved ${chunkCount} relevant chunk(s) from source(s): ${sourcesUsed.join(', ')}. Context size: ${ragContext.length} chars.`,
+            details: `Retrieved ${chunkCount} relevant chunk(s) from source(s): ${sourcesUsed.join(', ')}.`,
             type: 'info',
           });
         }
@@ -449,6 +439,7 @@ async function handleMessage(msg: WAMessage) {
           if (!mediaAttachment && responseText.length > 5) {
             dynamicResponseCache.set(messageContent, responseText);
           }
+          consecutiveFallbacksMap.set(chatId, 0);
           await db.addLog({
             user: agent.name,
             action: 'AI Response Generated',
@@ -457,13 +448,23 @@ async function handleMessage(msg: WAMessage) {
           });
         }
       } catch (err) {
-        console.error('AI response generation failed:', err);
+        console.error('AI response generation failed due to infrastructure error:', err);
         await db.addLog({
           user: agent.name,
-          action: 'AI Response Failed',
+          action: 'AI Infrastructure Outage / Error',
           details: (err as Error).message,
           type: 'error',
         });
+
+        // Trigger emergency human handoff for infrastructure failures
+        await db.setConversationTakeover(
+          chatId,
+          true,
+          undefined,
+          `AI service unavailable / timeout: ${(err as Error).message}`
+        );
+
+        responseText = "I am connecting you with one of our human support specialists who will assist you shortly.";
       }
     }
 
@@ -474,6 +475,7 @@ async function handleMessage(msg: WAMessage) {
         messageText: messageContent,
         history,
         currentConfidence: confidenceScore,
+        consecutiveFallbacks: currentFallbacks,
       });
 
       if (confHandoff.shouldHandoff && confHandoff.matchedRule) {
@@ -521,7 +523,7 @@ async function handleMessage(msg: WAMessage) {
       }
     }
 
-    // Rule-based fallback if not AI mode or if AI response failed / returned empty
+    // Rule-based fallback if not AI mode or if AI response returned empty
     if (!responseText) {
       const lowerText = messageContent.toLowerCase();
       for (const rule of agent.rules) {
@@ -535,7 +537,23 @@ async function handleMessage(msg: WAMessage) {
       }
       if (!responseText) {
         responseText = agent.fallbackResponse || "Sorry, I didn't quite understand that.";
+        consecutiveFallbacksMap.set(chatId, currentFallbacks + 1);
+      } else {
+        consecutiveFallbacksMap.set(chatId, 0);
       }
+    }
+
+    // Pre-Send Guard: Re-check if human agent engaged takeover while AI was generating
+    const latestConvo = await db.getConversation(chatId);
+    if (isConversationPaused(latestConvo)) {
+      console.log(`[HANDOFF RACE GUARD] Takeover engaged during generation for ${chatId}. Aborting auto-response send.`);
+      await db.addLog({
+        user: latestConvo?.assignedUserId ? `Assigned Agent (${latestConvo.assignedUserId})` : 'Human Operator',
+        action: 'AI Response Aborted (Takeover Engaged)',
+        details: `Human operator took over conversation ${chatId} while AI was generating. Outbound message dropped.`,
+        type: 'info',
+      });
+      return;
     }
 
     // 5. Send Outbound Response via WhatsApp & Persist to Supabase
@@ -550,6 +568,14 @@ async function handleMessage(msg: WAMessage) {
             provider: agent.aiSettings?.voiceProvider,
             voice: agent.aiSettings?.voiceName,
           });
+
+          // Second Guard: Check immediately before irreversible socket dispatch (post-TTS generation)
+          const immediateConvo = await db.getConversation(chatId);
+          if (isConversationPaused(immediateConvo)) {
+            console.log(`[HANDOFF RACE GUARD] Takeover engaged during TTS generation for ${chatId}. Aborting voice note send.`);
+            return;
+          }
+
           await sendVoiceNote(chatId, audioBuffer, responseText);
           await db.addLog({
             user: agent.name,
@@ -559,6 +585,12 @@ async function handleMessage(msg: WAMessage) {
           });
         } catch (ttsErr) {
           console.warn('Voice response generation failed, falling back to text:', ttsErr);
+          const fallbackConvo = await db.getConversation(chatId);
+          if (isConversationPaused(fallbackConvo)) {
+            console.log(`[HANDOFF RACE GUARD] Takeover engaged during TTS failure for ${chatId}. Aborting fallback text send.`);
+            return;
+          }
+
           await sendMessage(chatId, responseText);
           await db.addLog({
             user: agent.name,
@@ -568,6 +600,13 @@ async function handleMessage(msg: WAMessage) {
           });
         }
       } else {
+        // Immediate pre-send check before text socket dispatch
+        const immediateConvo = await db.getConversation(chatId);
+        if (isConversationPaused(immediateConvo)) {
+          console.log(`[HANDOFF RACE GUARD] Takeover engaged before text dispatch for ${chatId}. Aborting message send.`);
+          return;
+        }
+
         await sendMessage(chatId, responseText);
         await db.addLog({
           user: agent.name,
@@ -795,7 +834,12 @@ export async function init() {
 
     sock.ev.on('messages.upsert', (update) => {
       for (const msg of update.messages) {
-        handleMessage(msg);
+        const jid = msg.key.remoteJid;
+        if (jid) {
+          enqueueChatProcessing(jid, () => handleMessage(msg));
+        } else {
+          handleMessage(msg);
+        }
       }
     });
 
@@ -842,6 +886,7 @@ export async function init() {
 
       if (connection === 'open') {
           clearTimeout(connectTimeoutTimer);
+          state.reconnectAttempts = 0;
           state.status = 'connected';
           state.qr = null;
           state.connectingSince = null;
@@ -866,26 +911,21 @@ export async function init() {
           const shouldReconnect = code !== DisconnectReason.loggedOut && code !== DisconnectReason.connectionReplaced;
 
           if (shouldReconnect) {
-              console.log(`CONN_UPDATE: Connection closed (code=${code}). Attempting automatic reconnect...`);
+              state.reconnectAttempts++;
+              const backoffDelay = Math.min(1000 * Math.pow(1.5, Math.min(state.reconnectAttempts - 1, 8)), 30000) + Math.floor(Math.random() * 1000);
+              console.log(`CONN_UPDATE: Connection closed (code=${code}). Attempting automatic reconnect (#${state.reconnectAttempts}) in ${backoffDelay}ms...`);
               // Notify UI that we're attempting to restore the session
               state.status = 'connecting';
               state.sock = null;
               state.account = null;
-              // Give WhatsApp a short breather before trying again
+              // Exponential backoff with jitter
               setTimeout(() => {
                   init().catch((err) => console.error('Re-init failed:', err));
-              }, 1000);
+              }, backoffDelay);
           } else {
               // code is loggedOut (401) or connectionReplaced (440): WhatsApp has
-              // invalidated this session server-side. The credentials on disk are
-              // now dead, but useMultiFileAuthState would happily keep reading and
-              // reusing them on every future init() call (including the watchdog's
-              // periodic retries) — Baileys only generates a fresh QR when there
-              // are no existing credentials, so without deleting them here every
-              // subsequent connection attempt repeats the exact same 401/440
-              // rejection forever and a real QR is never shown again. Reproduced
-              // locally: confirmed this looped indefinitely every ~30s until this
-              // cleanup was added.
+              // invalidated this session server-side.
+              state.reconnectAttempts = 0;
               console.log(`CONN_UPDATE: Logged out by user/device (code=${code}). Clearing stale session and waiting for fresh QR rescan.`);
               await clearAuthDirectory();
               state.status = 'disconnected';
@@ -904,8 +944,25 @@ export async function init() {
   }
 }
 
-// ----------------- Watchdog & Auto-Init -----------------
+// ----------------- Graceful Process Shutdown & Lifecycle -----------------
 const isBuilding = process.env.NEXT_PHASE === 'phase-production-build';
+
+if (typeof process !== 'undefined' && !isBuilding) {
+    const handleGracefulShutdown = async (signal: string) => {
+        console.log(`[SHUTDOWN] Received ${signal}. Closing WhatsApp socket cleanly...`);
+        if (state.sock) {
+            try {
+                state.sock.end(new Error(`Graceful shutdown via ${signal}`));
+            } catch (err) {
+                console.error('Error closing socket on shutdown:', err);
+            }
+        }
+    };
+    process.once('SIGTERM', () => handleGracefulShutdown('SIGTERM'));
+    process.once('SIGINT', () => handleGracefulShutdown('SIGINT'));
+}
+
+// ----------------- Watchdog & Auto-Init -----------------
 
 if (!global.whatsappWatchdog && !isBuilding) {
     global.whatsappWatchdog = setInterval(() => {
@@ -965,10 +1022,15 @@ export async function sendMessage(to: string, text: string) {
     };
 
     await db.addMessage(message);
-    await db.updateConversation(to, {
-        lastMessage: { text: message.text, timestamp: message.timestamp },
-        unreadCount: 0,
-    });
+    const existingConvo = await db.getConversation(to);
+    const updates: any = {
+      lastMessage: { text: message.text, timestamp: message.timestamp },
+      unreadCount: 0,
+    };
+    if (existingConvo && !existingConvo.firstResponseTimeMs && existingConvo.lastMessage?.timestamp) {
+      updates.firstResponseTimeMs = Math.max(0, Date.now() - existingConvo.lastMessage.timestamp);
+    }
+    await db.updateConversation(to, updates);
     await db.incrementStat('sent');
 
     return result;
@@ -996,10 +1058,15 @@ export async function sendVoiceNote(to: string, audioBuffer: Buffer, transcriptT
     };
 
     await db.addMessage(message);
-    await db.updateConversation(to, {
-        lastMessage: { text: message.text, timestamp: message.timestamp },
-        unreadCount: 0,
-    });
+    const existingConvo = await db.getConversation(to);
+    const updates: any = {
+      lastMessage: { text: message.text, timestamp: message.timestamp },
+      unreadCount: 0,
+    };
+    if (existingConvo && !existingConvo.firstResponseTimeMs && existingConvo.lastMessage?.timestamp) {
+      updates.firstResponseTimeMs = Math.max(0, Date.now() - existingConvo.lastMessage.timestamp);
+    }
+    await db.updateConversation(to, updates);
     await db.incrementStat('sent');
 
     return result;

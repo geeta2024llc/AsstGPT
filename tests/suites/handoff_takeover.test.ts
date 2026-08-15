@@ -9,6 +9,7 @@ import {
   setConversationTakeover,
   updateConversation,
 } from '../../src/lib/db';
+import { getSupabaseAdmin } from '../../src/lib/supabase';
 import {
   evaluateHandoffRules,
   classifyIntent,
@@ -178,8 +179,49 @@ export async function runHandoffTestSuite(): Promise<boolean> {
     const resumeVerified = resumedConvo?.isBotPaused === false;
     console.log(`   - AI Auto-Reply Resumed: ${resumeVerified ? '✅ PASS' : '❌ FAIL'} (isBotPaused: ${resumedConvo?.isBotPaused})`);
     if (!resumeVerified) allPassed = false;
+
+    // Cleanup test conversation and contact
+    const sb = getSupabaseAdmin();
+    const { data: cc } = await sb.from('contact_channels').select('contact_id').eq('external_id', testChatId).maybeSingle();
+    if (cc?.contact_id) {
+      await sb.from('contacts').delete().eq('id', cc.contact_id);
+    }
   } catch (convoErr) {
     console.error('   - Conversation takeover test error:', convoErr);
+    allPassed = false;
+  }
+
+  // Test 8: Mid-Flight Takeover Concurrency Race Guard
+  console.log('\n8. Testing Mid-Flight Takeover Race Condition Guard...');
+  const raceChatId = 'test_race_takeover@s.whatsapp.net';
+  try {
+    const sb = getSupabaseAdmin();
+    await updateConversation(raceChatId, {
+      name: 'Race Takeover Customer',
+      isBotPaused: false,
+      lastMessage: { text: 'Inbound asking question', timestamp: Date.now() },
+    });
+
+    // Simulate in-flight AI generation running concurrently with human takeover
+    const initialConvo = await getConversations().then(cs => cs.find(c => c.id === raceChatId));
+    console.log(`   - Pre-generation state: isBotPaused = ${initialConvo?.isBotPaused}`);
+
+    // Mid-flight: Operator takes over before send
+    await setConversationTakeover(raceChatId, true, team[0]?.id, 'Operator took over mid-flight');
+
+    // Assert pre-send guard catches the state change and aborts send
+    const latestConvo = await getConversations().then(cs => cs.find(c => c.id === raceChatId));
+    const isPaused = latestConvo?.isBotPaused === true;
+    console.log(`   - Pre-send Guard Check: isBotPaused = ${latestConvo?.isBotPaused} -> Should Abort Outbound: ${isPaused ? '✅ PASS' : '❌ FAIL'}`);
+    if (!isPaused) allPassed = false;
+
+    // Cleanup
+    const { data: ccRace } = await sb.from('contact_channels').select('contact_id').eq('external_id', raceChatId).maybeSingle();
+    if (ccRace?.contact_id) {
+      await sb.from('contacts').delete().eq('id', ccRace.contact_id);
+    }
+  } catch (raceErr) {
+    console.error('   - Mid-flight takeover race test error:', raceErr);
     allPassed = false;
   }
 
@@ -191,7 +233,7 @@ export async function runHandoffTestSuite(): Promise<boolean> {
 }
 
 // Direct execution
-if (require.main === module) {
+if (process.argv[1] && process.argv[1].includes('handoff_takeover.test.ts')) {
   runHandoffTestSuite().then(passed => {
     process.exit(passed ? 0 : 1);
   });

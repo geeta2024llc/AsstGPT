@@ -2,6 +2,20 @@ import { NextResponse } from 'next/server';
 import { updateAgent, deleteAgent, getAgent, addLog } from '@/lib/db';
 import type { Agent } from '@/types';
 
+function maskAgentApiKey(agent: Agent): Agent {
+  if (agent.aiSettings?.apiKey) {
+    const key = agent.aiSettings.apiKey;
+    return {
+      ...agent,
+      aiSettings: {
+        ...agent.aiSettings,
+        apiKey: key.length > 8 ? `${key.slice(0, 4)}••••••••${key.slice(-4)}` : '••••••••',
+      },
+    };
+  }
+  return agent;
+}
+
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -10,7 +24,7 @@ export async function GET(
     const { id } = await params;
     const agent = await getAgent(id);
     if (!agent) return NextResponse.json({ message: 'Not found' }, { status: 404 });
-    return NextResponse.json(agent);
+    return NextResponse.json(maskAgentApiKey(agent));
   } catch (error) {
     console.error('Failed to fetch agent:', error);
     return NextResponse.json({ message: 'Failed' }, { status: 500 });

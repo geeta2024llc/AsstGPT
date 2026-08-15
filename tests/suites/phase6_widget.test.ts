@@ -102,6 +102,13 @@ export async function runPhase6TestSuite(): Promise<boolean> {
       console.log('   - Web Chat Live Takeover: ❌ FAIL');
       allPassed = false;
     }
+
+    // Cleanup test conversation & contact
+    const sb = (await import('../../src/lib/supabase')).getSupabaseAdmin();
+    const { data: cc } = await sb.from('contact_channels').select('contact_id').eq('external_id', testChatId).maybeSingle();
+    if (cc?.contact_id) {
+      await sb.from('contacts').delete().eq('id', cc.contact_id);
+    }
   } catch (err) {
     console.error('   - Takeover error:', err);
     allPassed = false;

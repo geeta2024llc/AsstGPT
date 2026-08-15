@@ -54,3 +54,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: 'Failed to update conversation resolution status' }, { status: 500 });
   }
 }
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    const { chatId, unreadCount } = body;
+
+    if (!chatId) {
+      return NextResponse.json({ message: 'Missing required field: chatId' }, { status: 400 });
+    }
+
+    const { updateConversation } = await import('@/lib/db');
+    await updateConversation(chatId, {
+      unreadCount: unreadCount !== undefined ? unreadCount : 0,
+    });
+
+    return NextResponse.json({ success: true, chatId, unreadCount: 0 });
+  } catch (err: any) {
+    console.error('Failed to patch conversation:', err);
+    return NextResponse.json({ message: 'Failed to patch conversation' }, { status: 500 });
+  }
+}

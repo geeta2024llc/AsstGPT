@@ -7,7 +7,11 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const webhooks = await getWebhooks();
-    return NextResponse.json(webhooks);
+    const masked = webhooks.map((w) => ({
+      ...w,
+      secret: w.secret ? `${w.secret.slice(0, 6)}••••••••` : undefined,
+    }));
+    return NextResponse.json(masked);
   } catch (error) {
     console.error('Failed to get webhooks:', error);
     return NextResponse.json({ message: 'Failed to fetch webhooks' }, { status: 500 });

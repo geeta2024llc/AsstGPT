@@ -20,6 +20,7 @@ export interface HandoffCondition {
   intents?: string[]; // e.g. ['human_agent_request', 'complaint', 'billing_refund', 'cancellation']
   keywords?: string[]; // e.g. ['human', 'agent', 'operator', 'representative', 'urgent']
   maxFallbacks?: number; // consecutive unanswered / low confidence count
+  consecutiveFallbacks?: number;
 }
 
 export interface HandoffAction {
@@ -168,9 +169,10 @@ export interface Conversation {
   assignedUser?: TeamMember;
   /** Reason why handoff occurred */
   handoffReason?: string;
+  takeoverReason?: string;
   handoffMetadata?: Record<string, any>;
   handoffAt?: number;
-  status?: 'open' | 'resolved';
+  status?: 'open' | 'resolved' | 'pending';
   /** CRM fields */
   contactId?: string;
   stage?: LeadStage;
@@ -182,6 +184,11 @@ export interface Conversation {
   sentiment?: SentimentType;
   firstResponseTimeMs?: number;
   resolutionDurationMs?: number;
+}
+
+export function isConversationPaused(convo?: Partial<Conversation> | null): boolean {
+  if (!convo) return false;
+  return !!convo.isBotPaused || convo.assignedAgentId === null || convo.assignedAgentId === '';
 }
 
 export interface Message {

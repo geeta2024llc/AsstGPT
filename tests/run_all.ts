@@ -5,6 +5,17 @@ import { runAuditAnalyticsTest } from './suites/audit_analytics.test';
 import { runPipelineTest } from './suites/pipeline.test';
 import { runRagE2ETestSuite } from './suites/rag_e2e.test';
 import { runMultimodalTestSuite } from './suites/multimodal.test';
+import { runHandoffTestSuite } from './suites/handoff_takeover.test';
+import { runPhase1TestSuite } from './suites/phase1_productivity.test';
+import { runPhase2TestSuite } from './suites/phase2_notes.test';
+import { runPhase3TestSuite } from './suites/phase3_crm.test';
+import { runPhase4TestSuite } from './suites/phase4_webhooks.test';
+import { runPhase5TestSuite } from './suites/phase5_analytics.test';
+import { runPhase6TestSuite } from './suites/phase6_widget.test';
+import { runPhase7TestSuite as runRbacTestSuite } from './suites/phase7_rbac.test';
+import { runPhase7TestSuite as runProductionHardeningTestSuite } from './suites/phase7_production.test';
+import { runMultiTenantRBACTestSuite } from './suites/multitenant_rbac.test';
+import { runAIFailureAndTakeoverRaceTestSuite } from './suites/ai_failure_and_takeover_races.test';
 
 interface SuiteResult {
   name: string;
@@ -24,6 +35,17 @@ async function runMasterTestSuite() {
     { name: 'Analytics & DB Query Verification', runner: runAnalyticsTestSuite },
     { name: 'Audit Logs & DB Health', runner: runAuditAnalyticsTest },
     { name: 'RAG End-to-End & Anti-Hallucination', runner: runRagE2ETestSuite },
+    { name: 'Handoff Rules & Live Takeover', runner: runHandoffTestSuite },
+    { name: 'Canned Responses & Lifecycle', runner: runPhase1TestSuite },
+    { name: 'Internal Team Notes', runner: runPhase2TestSuite },
+    { name: 'Contact CRM & Customer Profiles', runner: runPhase3TestSuite },
+    { name: 'Outbound Webhooks & HMAC Dispatch', runner: runPhase4TestSuite },
+    { name: 'Analytics & Sentiment Insights', runner: runPhase5TestSuite },
+    { name: 'Live Web Chat Widget', runner: runPhase6TestSuite },
+    { name: 'Team Roles & RBAC', runner: runRbacTestSuite },
+    { name: 'Production Hardening & Idempotency', runner: runProductionHardeningTestSuite },
+    { name: 'Multi-Tenant Isolation & Security', runner: runMultiTenantRBACTestSuite },
+    { name: 'AI Failure Resilience & Takeover Races', runner: runAIFailureAndTakeoverRaceTestSuite },
   ];
 
   const results: SuiteResult[] = [];

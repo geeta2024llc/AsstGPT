@@ -2,6 +2,8 @@ import 'dotenv/config';
 import { getAnalyticsData } from '../../src/lib/analytics';
 import { getSupabaseAdmin } from '../../src/lib/supabase';
 
+import { subDays, startOfDay } from 'date-fns';
+
 export async function runAnalyticsTestSuite(): Promise<boolean> {
   console.log('\n============================================================');
   console.log('  AGENT ANALYTICS INTEGRATION TEST SUITE');
@@ -21,12 +23,22 @@ export async function runAnalyticsTestSuite(): Promise<boolean> {
   console.log(`   - 7d range:    ${data7d.range}    | Total convos: ${data7d.kpis.totalConversations}`);
   console.log(`   - 30d range:   ${data30d.range}   | Total convos: ${data30d.kpis.totalConversations}`);
 
+  if (dataToday.range !== 'today' || data7d.range !== '7d' || data30d.range !== '30d') {
+    console.log('   - Range Identifiers: ❌ FAIL');
+    allPassed = false;
+  } else {
+    console.log('   - Range Identifiers: ✅ PASS');
+  }
+
   // Test 2: Cross-check numbers directly against Supabase queries
   console.log('\n2. Cross-Checking Metrics Against Supabase DB Queries...');
-  const { count: realConvoCount } = await sb.from('conversations').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId);
-  const { count: realMsgCount } = await sb.from('messages').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId);
+  const now = new Date();
+  const startDate7d = subDays(startOfDay(now), 7 - 1).toISOString();
+
+  const { count: realConvoCount } = await sb.from('conversations').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('created_at', startDate7d);
+  const { count: realMsgCount } = await sb.from('messages').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('created_at', startDate7d);
   const { count: realAgentCount } = await sb.from('agents').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('status', 'active');
-  const { count: realErrCount } = await sb.from('audit_logs').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('log_type', 'error');
+  const { count: realErrCount } = await sb.from('audit_logs').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('log_type', 'error').gte('created_at', startDate7d);
 
   const convosMatch = data7d.kpis.totalConversations === (realConvoCount || 0);
   const msgsMatch = data7d.kpis.totalMessages === (realMsgCount || 0);

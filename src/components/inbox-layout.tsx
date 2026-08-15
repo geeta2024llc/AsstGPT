@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -48,9 +48,10 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { formatContactName, formatChatSubtitle, getAvatarInitials } from '@/lib/format-utils';
 import ContactProfileDrawer from '@/components/contact-profile-drawer';
-import type { Conversation, Message, TeamMember, CannedResponse, ConversationNote } from '@/types';
+import { Conversation, Message, TeamMember, CannedResponse, ConversationNote, isConversationPaused } from '@/types';
 import { format } from 'date-fns';
 
 function playNotificationChime() {
@@ -90,6 +91,7 @@ export default function InboxLayout() {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [cannedResponses, setCannedResponses] = useState<CannedResponse[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [failedMessageIds, setFailedMessageIds] = useState<Set<string>>(new Set());
   const [newMessage, setNewMessage] = useState('');
   const [composerMode, setComposerMode] = useState<'message' | 'note'>('message');
   const [isLoading, setIsLoading] = useState({ convos: true, messages: false });
@@ -123,35 +125,37 @@ export default function InboxLayout() {
       )
     : [];
 
-  const filteredConversations = conversations.filter(c => {
-    const matchesSearch =
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.id.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredConversations = useMemo(() => {
+    return conversations.filter(c => {
+      const matchesSearch =
+        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.id.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const isResolved = c.status === 'resolved';
+      const isResolved = c.status === 'resolved';
 
-    let matchesFilter = true;
-    if (filterMode === 'open') {
-      matchesFilter = !isResolved;
-    } else if (filterMode === 'my_chats') {
-      const myId = teamMembers[0]?.id;
-      matchesFilter = c.assignedUserId === myId && !isResolved;
-    } else if (filterMode === 'unassigned') {
-      matchesFilter = (!c.assignedUserId || c.assignedUserId === 'unassigned') && !isResolved;
-    } else if (filterMode === 'unread') {
-      matchesFilter = c.unreadCount > 0;
-    } else if (filterMode === 'bot_active') {
-      matchesFilter = !c.isBotPaused && (c.assignedAgentId !== null && c.assignedAgentId !== '') && !isResolved;
-    } else if (filterMode === 'human_takeover') {
-      matchesFilter = (!!c.isBotPaused || c.assignedAgentId === null || c.assignedAgentId === '') && !isResolved;
-    } else if (filterMode === 'resolved') {
-      matchesFilter = isResolved;
-    } else if (filterMode === 'all') {
-      matchesFilter = true;
-    }
+      let matchesFilter = true;
+      if (filterMode === 'open') {
+        matchesFilter = !isResolved;
+      } else if (filterMode === 'my_chats') {
+        const myId = teamMembers[0]?.id;
+        matchesFilter = c.assignedUserId === myId && !isResolved;
+      } else if (filterMode === 'unassigned') {
+        matchesFilter = (!c.assignedUserId || c.assignedUserId === 'unassigned') && !isResolved;
+      } else if (filterMode === 'unread') {
+        matchesFilter = c.unreadCount > 0;
+      } else if (filterMode === 'bot_active') {
+        matchesFilter = !isConversationPaused(c) && !isResolved;
+      } else if (filterMode === 'human_takeover') {
+        matchesFilter = isConversationPaused(c) && !isResolved;
+      } else if (filterMode === 'resolved') {
+        matchesFilter = isResolved;
+      } else if (filterMode === 'all') {
+        matchesFilter = true;
+      }
 
-    return matchesSearch && matchesFilter;
-  });
+      return matchesSearch && matchesFilter;
+    });
+  }, [conversations, searchQuery, filterMode, teamMembers]);
 
   const fetchConversations = async () => {
     try {
@@ -232,7 +236,8 @@ export default function InboxLayout() {
     fetchConversations();
     fetchTeamMembers();
     fetchCannedResponses();
-    const interval = setInterval(fetchConversations, 10000); // 10s fallback polling
+    // Fast 5s fallback polling ensures responsive updates even if Realtime is unavailable
+    const interval = setInterval(fetchConversations, 5000);
     return () => clearInterval(interval);
   }, [soundEnabled]);
 
@@ -247,8 +252,13 @@ export default function InboxLayout() {
     }
   }, [selectedConversationId]);
 
-  // 3. Supabase Realtime Live Streaming Subscription
+  // 3. Supabase Realtime Live Streaming Subscription (only when configured)
   useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      // Supabase credentials not set or using placeholder — skip WebSocket to avoid connection errors
+      return;
+    }
+
     try {
       const channel = supabase
         .channel('inbox-live-stream')
@@ -258,19 +268,38 @@ export default function InboxLayout() {
           (payload: any) => {
             const row = payload.new;
             if (row) {
-              const msgChatId = row.chat_id || row.conversation_id;
+              const rawChatId = row.metadata?.chatId || row.metadata?.chat_id || row.chat_id || row.conversation_id;
               const formattedMsg: Message = {
                 id: row.provider_message_id || row.id,
-                chatId: msgChatId,
+                chatId: rawChatId,
                 fromMe: !!row.from_me,
                 text: row.text || '',
                 timestamp: new Date(row.timestamp || row.created_at).getTime(),
                 senderName: row.sender_name || (row.from_me ? 'Me' : 'Customer'),
               };
 
-              if (selectedConversationId && msgChatId === selectedConversationId) {
+              const isCurrentChat =
+                selectedConversationId &&
+                (rawChatId === selectedConversationId ||
+                 row.conversation_id === selectedConversationId ||
+                 (selectedConversation && (rawChatId === selectedConversation.id || row.conversation_id === (selectedConversation as any).convoId)));
+
+              if (isCurrentChat) {
                 setMessages(prev => {
                   if (prev.some(m => m.id === formattedMsg.id)) return prev;
+
+                  // Reconcile optimistic temp_ messages: If an outbound temp_ message with the same text exists within 15 seconds, replace it
+                  if (formattedMsg.fromMe) {
+                    const tempIndex = prev.findIndex(
+                      m => m.id.startsWith('temp_') && m.fromMe && m.text === formattedMsg.text && Math.abs(m.timestamp - formattedMsg.timestamp) < 15000
+                    );
+                    if (tempIndex !== -1) {
+                      const next = [...prev];
+                      next[tempIndex] = formattedMsg;
+                      return next.sort((a, b) => a.timestamp - b.timestamp);
+                    }
+                  }
+
                   return [...prev, formattedMsg].sort((a, b) => a.timestamp - b.timestamp);
                 });
               }
@@ -302,7 +331,11 @@ export default function InboxLayout() {
         .subscribe();
 
       return () => {
-        supabase.removeChannel(channel);
+        try {
+          supabase.removeChannel(channel);
+        } catch {
+          // Ignore cleanup errors
+        }
       };
     } catch (realtimeErr) {
       console.warn('Realtime subscription setup notice:', realtimeErr);
@@ -480,6 +513,40 @@ export default function InboxLayout() {
     }
   };
 
+  const retryFailedMessage = async (msg: Message) => {
+    setFailedMessageIds(prev => {
+      const next = new Set(prev);
+      next.delete(msg.id);
+      return next;
+    });
+    try {
+      const res = await fetch('/api/whatsapp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: msg.chatId, text: msg.text }),
+      });
+      if (!res.ok) throw new Error(`Failed to send message (HTTP ${res.status})`);
+      toast({ title: 'Message Sent', description: 'Outbound message delivered successfully.' });
+    } catch (err) {
+      setFailedMessageIds(prev => new Set(prev).add(msg.id));
+      toast({ variant: 'destructive', title: 'Retry Failed', description: (err as Error).message });
+    }
+  };
+
+  const handleSelectConversation = async (convo: Conversation) => {
+    setSelectedConversationId(convo.id);
+    if (convo.unreadCount > 0) {
+      setConversations(prev => prev.map(c => c.id === convo.id ? { ...c, unreadCount: 0 } : c));
+      try {
+        fetch('/api/inbox/resolve', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chatId: convo.id, unreadCount: 0 }),
+        }).catch(() => {});
+      } catch (_) {}
+    }
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || !selectedConversationId) return;
@@ -492,28 +559,33 @@ export default function InboxLayout() {
     const originalMessage = newMessage;
     setNewMessage('');
 
+    const tempId = `temp_${Date.now()}`;
+    const optimisticMessage: Message = {
+      id: tempId,
+      chatId: selectedConversationId,
+      fromMe: true,
+      text: originalMessage,
+      timestamp: Date.now(),
+      senderName: 'Me',
+    };
+    setMessages(prev => [...prev, optimisticMessage]);
+
     try {
-      await fetch('/api/whatsapp/send', {
+      const res = await fetch('/api/whatsapp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ to: selectedConversationId, text: originalMessage }),
       });
 
-      const optimisticMessage: Message = {
-        id: `temp_${Date.now()}`,
-        chatId: selectedConversationId,
-        fromMe: true,
-        text: originalMessage,
-        timestamp: Date.now(),
-        senderName: 'Me',
-      };
-      setMessages(prev => [...prev, optimisticMessage]);
+      if (!res.ok) {
+        throw new Error(`Failed to send message (HTTP ${res.status})`);
+      }
 
       if (selectedConversation?.status === 'resolved') {
         handleToggleResolve(selectedConversationId, false);
       }
     } catch (error) {
-      setNewMessage(originalMessage);
+      setFailedMessageIds(prev => new Set(prev).add(tempId));
       toast({ variant: 'destructive', title: 'Send Failed', description: (error as Error).message });
     }
   };
@@ -536,10 +608,7 @@ export default function InboxLayout() {
     ...notes.map(n => ({ type: 'note' as const, data: n, timestamp: n.createdAt })),
   ].sort((a, b) => a.timestamp - b.timestamp);
 
-  const isSelectedConvoPaused =
-    selectedConversation?.isBotPaused ||
-    selectedConversation?.assignedAgentId === null ||
-    selectedConversation?.assignedAgentId === '';
+  const isSelectedConvoPaused = isConversationPaused(selectedConversation);
 
   const isSelectedConvoResolved = selectedConversation?.status === 'resolved';
 
@@ -619,14 +688,16 @@ export default function InboxLayout() {
             </div>
           ) : (
             filteredConversations.map((convo, idx) => {
-              const isPaused = convo.isBotPaused || convo.assignedAgentId === null || convo.assignedAgentId === '';
+              const isPaused = isConversationPaused(convo);
               const isResolved = convo.status === 'resolved';
               const member = teamMembers.find(m => m.id === convo.assignedUserId);
+              const displayName = formatContactName(convo.name, convo.id);
+              const avatarInitials = getAvatarInitials(convo.name, convo.id);
 
               return (
                 <div
                   key={`${convo.id}_${idx}`}
-                  onClick={() => setSelectedConversationId(convo.id)}
+                  onClick={() => handleSelectConversation(convo)}
                   className={cn(
                     'flex cursor-pointer items-center gap-3 p-3 transition-colors hover:bg-muted/50 border-b border-border/40',
                     selectedConversationId === convo.id && 'bg-muted/80',
@@ -634,9 +705,11 @@ export default function InboxLayout() {
                   )}
                 >
                   <div className="relative">
-                    <Avatar className="h-10 w-10 border">
-                      <AvatarImage src={convo.avatar} alt={convo.name} />
-                      <AvatarFallback>{convo.name.charAt(0).toUpperCase()}</AvatarFallback>
+                    <Avatar className="h-10 w-10 border bg-muted/40 shrink-0">
+                      <AvatarImage src={convo.avatar} alt={displayName} />
+                      <AvatarFallback className="font-semibold text-xs text-primary bg-primary/10">
+                        {avatarInitials}
+                      </AvatarFallback>
                     </Avatar>
                     <span
                       className={cn(
@@ -661,7 +734,7 @@ export default function InboxLayout() {
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
-                      <p className="font-semibold text-sm truncate">{convo.name}</p>
+                      <p className="font-semibold text-sm truncate">{displayName}</p>
                       <span className="text-[11px] text-muted-foreground whitespace-nowrap ml-2">
                         {formatTimestamp(convo.lastMessage.timestamp)}
                       </span>
@@ -732,14 +805,18 @@ export default function InboxLayout() {
                     <span className="sr-only">Back</span>
                   </Button>
 
-                  <Avatar className="h-9 w-9 shrink-0 border">
-                    <AvatarImage src={selectedConversation.avatar} alt={selectedConversation.name} />
-                    <AvatarFallback>{selectedConversation.name.charAt(0).toUpperCase()}</AvatarFallback>
+                  <Avatar className="h-9 w-9 shrink-0 border bg-muted/40">
+                    <AvatarImage src={selectedConversation.avatar} alt={formatContactName(selectedConversation.name, selectedConversation.id)} />
+                    <AvatarFallback className="font-semibold text-xs text-primary bg-primary/10">
+                      {getAvatarInitials(selectedConversation.name, selectedConversation.id)}
+                    </AvatarFallback>
                   </Avatar>
 
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <h3 className="font-headline font-semibold text-sm truncate">{selectedConversation.name}</h3>
+                      <h3 className="font-headline font-semibold text-sm truncate">
+                        {formatContactName(selectedConversation.name, selectedConversation.id)}
+                      </h3>
                       {selectedConversation.stage && (
                         <span className={cn('text-[10px] px-1.5 py-0 rounded border capitalize font-medium', {
                           'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20': selectedConversation.stage === 'lead',
@@ -773,13 +850,7 @@ export default function InboxLayout() {
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground truncate">
-                      <span>{selectedConversation.id}</span>
-                      {selectedConversation.company && (
-                        <>
-                          <span>•</span>
-                          <span className="truncate font-medium">{selectedConversation.company}</span>
-                        </>
-                      )}
+                      <span>{formatChatSubtitle(selectedConversation.id, selectedConversation.company)}</span>
                     </div>
                   </div>
                 </div>
@@ -970,35 +1041,71 @@ export default function InboxLayout() {
                     }
 
                     const msg = item.data;
+                    const isOutbound = msg.fromMe;
+                    const senderDisplayName = formatContactName(
+                      msg.senderName && msg.senderName.toLowerCase() !== 'me' && msg.senderName.toLowerCase() !== 'system'
+                        ? msg.senderName
+                        : selectedConversation.name,
+                      selectedConversation.id
+                    );
+
+                    const isFailed = failedMessageIds.has(msg.id);
+
                     return (
                       <div
                         key={`msg_${msg.id}_${idx}`}
-                        className={cn('flex items-end gap-2', msg.fromMe ? 'justify-end' : 'justify-start')}
+                        className={cn('flex items-end gap-2', isOutbound ? 'justify-end' : 'justify-start')}
                       >
-                        {!msg.fromMe && (
-                          <Avatar className="h-7 w-7 border shrink-0">
-                            <AvatarImage src={selectedConversation.avatar} alt={selectedConversation.name} />
-                            <AvatarFallback>{selectedConversation.name.charAt(0).toUpperCase()}</AvatarFallback>
+                        {!isOutbound && (
+                          <Avatar className="h-7 w-7 border shrink-0 bg-muted/40 mb-1">
+                            <AvatarImage src={selectedConversation.avatar} alt={senderDisplayName} />
+                            <AvatarFallback className="text-[10px] font-semibold text-primary bg-primary/10">
+                              {getAvatarInitials(msg.senderName || selectedConversation.name, selectedConversation.id)}
+                            </AvatarFallback>
                           </Avatar>
                         )}
 
-                        <div
-                          className={cn(
-                            'max-w-xs rounded-2xl px-4 py-2.5 shadow-sm text-sm md:max-w-md lg:max-w-lg space-y-1',
-                            msg.fromMe
-                              ? 'bg-primary text-primary-foreground rounded-br-xs'
-                              : 'border bg-card text-card-foreground rounded-bl-xs'
+                        <div className="space-y-1 max-w-xs md:max-w-md lg:max-w-lg">
+                          {!isOutbound && (
+                            <div className="text-[11px] font-medium text-muted-foreground pl-1">
+                              {senderDisplayName}
+                            </div>
                           )}
-                        >
-                          <p className="leading-relaxed whitespace-pre-wrap break-words">{msg.text}</p>
                           <div
                             className={cn(
-                              'flex items-center justify-end gap-1 text-[10px] opacity-70',
-                              msg.fromMe ? 'text-primary-foreground' : 'text-muted-foreground'
+                              'rounded-2xl px-4 py-2.5 shadow-xs text-sm space-y-1',
+                              isFailed
+                                ? 'bg-destructive/10 border border-destructive/30 text-foreground rounded-br-xs'
+                                : isOutbound
+                                ? 'bg-primary text-primary-foreground rounded-br-xs'
+                                : 'border bg-card text-card-foreground rounded-bl-xs'
                             )}
                           >
-                            <span>{format(new Date(msg.timestamp), 'p')}</span>
-                            {msg.fromMe && <CheckCircle2 className="h-3 w-3 inline" />}
+                            <p className="leading-relaxed whitespace-pre-wrap break-words">{msg.text}</p>
+                            <div
+                              className={cn(
+                                'flex items-center justify-end gap-1.5 text-[10px]',
+                                isFailed
+                                  ? 'text-destructive'
+                                  : isOutbound
+                                  ? 'text-primary-foreground opacity-70'
+                                  : 'text-muted-foreground opacity-70'
+                              )}
+                            >
+                              <span>{format(new Date(msg.timestamp), 'p')}</span>
+                              {isFailed ? (
+                                <button
+                                  type="button"
+                                  onClick={() => retryFailedMessage(msg)}
+                                  className="flex items-center gap-1 font-medium bg-destructive text-destructive-foreground px-2 py-0.5 rounded-full hover:bg-destructive/90 transition-colors cursor-pointer"
+                                >
+                                  <RotateCcw className="h-3 w-3" />
+                                  <span>Retry</span>
+                                </button>
+                              ) : (
+                                isOutbound && <CheckCircle2 className="h-3 w-3 inline" />
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>

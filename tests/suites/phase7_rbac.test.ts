@@ -107,6 +107,13 @@ export async function runPhase7TestSuite(): Promise<boolean> {
       console.log('   - Team Member Deletion: ❌ FAIL');
       allPassed = false;
     }
+
+    // Cleanup test conversation & contact
+    const sb = (await import('../../src/lib/supabase')).getSupabaseAdmin();
+    const { data: cc } = await sb.from('contact_channels').select('contact_id').eq('external_id', 'test_rbac_chat_9988@s.whatsapp.net').maybeSingle();
+    if (cc?.contact_id) {
+      await sb.from('contacts').delete().eq('id', cc.contact_id);
+    }
   } catch (err) {
     console.error('   - Deletion error:', err);
     allPassed = false;

@@ -112,6 +112,7 @@ export default function DashboardPage() {
   const [range, setRange] = useState<'today' | '7d' | '30d'>('7d');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const fetchWhatsAppStatus = async () => {
     try {
@@ -131,35 +132,38 @@ export default function DashboardPage() {
   const fetchAnalytics = async (selectedRange: 'today' | '7d' | '30d' = range, showRefreshing = false) => {
     if (showRefreshing) setIsRefreshing(true);
     try {
+      setFetchError(null);
       const res = await fetch(`/api/analytics?range=${selectedRange}`);
-      if (!res.ok) throw new Error('Failed to fetch analytics data');
+      if (!res.ok) throw new Error(`Failed to fetch analytics (HTTP ${res.status})`);
       const data: AnalyticsData = await res.json();
       setAnalytics(data);
     } catch (error) {
       console.error('Failed to fetch analytics:', error);
+      setFetchError((error as Error).message || 'Failed to load analytics.');
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
   };
 
+  // WhatsApp status polling (independent of range changes)
   useEffect(() => {
     fetchWhatsAppStatus();
-    fetchAnalytics(range);
-
     const statusInterval = setInterval(fetchWhatsAppStatus, 5000);
-    const dataInterval = setInterval(() => fetchAnalytics(range), 15000);
+    return () => clearInterval(statusInterval);
+  }, []);
 
-    return () => {
-      clearInterval(statusInterval);
-      clearInterval(dataInterval);
-    };
+  // Analytics polling (gated on [range], refreshed on change & every 15s)
+  useEffect(() => {
+    fetchAnalytics(range);
+    const dataInterval = setInterval(() => fetchAnalytics(range), 15000);
+    return () => clearInterval(dataInterval);
   }, [range]);
 
   const handleRangeChange = (newRange: 'today' | '7d' | '30d') => {
+    if (newRange === range) return;
     setRange(newRange);
     setIsLoading(true);
-    fetchAnalytics(newRange);
   };
 
   const renderStatusBadge = () => {
@@ -215,6 +219,33 @@ export default function DashboardPage() {
     { title: 'AI Response Failures', value: analytics.kpis.aiResponseFailures, icon: AlertTriangle, desc: 'Failed model executions' },
     { title: 'Active Agents', value: analytics.kpis.activeAgents, icon: Zap, desc: 'Configured AI bots' },
   ] : [];
+
+  if (fetchError && !analytics) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="font-headline text-3xl font-bold tracking-tight">Agent Analytics Dashboard</h1>
+        </div>
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6 text-destructive space-y-4">
+          <div className="flex items-center gap-2 font-semibold">
+            <AlertTriangle className="h-5 w-5" />
+            <span>Failed to Load Analytics</span>
+          </div>
+          <p className="text-sm">{fetchError}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setIsLoading(true);
+              fetchAnalytics(range);
+            }}
+          >
+            <RefreshCw className="h-4 w-4 mr-2" /> Retry Fetch
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading && !analytics) {
     return (

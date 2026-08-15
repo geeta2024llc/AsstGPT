@@ -110,27 +110,32 @@ Return ONLY the category name in lowercase with no extra text or explanation:`;
   }
 
   if (geminiKey) {
-    try {
-      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(3500),
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 20,
-          },
-        }),
-      });
+    const candidateModels = ['gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-3.1-flash-lite', 'gemini-3.5-flash'];
+    for (const model of candidateModels) {
+      try {
+        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(3500),
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.1,
+              maxOutputTokens: 20,
+            },
+          }),
+        });
 
-      const data = await resp.json();
-      const rawResult = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim()?.toLowerCase() || '';
+        const data = await resp.json();
+        if (data.error) continue;
 
-      const matched = KNOWN_INTENTS.find(i => rawResult.includes(i));
-      return matched || 'product_inquiry';
-    } catch (err) {
-      console.warn('[INTENT_CLASSIFIER] LLM intent classification failed, defaulting to product_inquiry:', err);
+        const rawResult = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim()?.toLowerCase() || '';
+        const matched = KNOWN_INTENTS.find(i => rawResult.includes(i));
+        if (matched) return matched;
+        return 'product_inquiry';
+      } catch (err) {
+        console.warn(`[INTENT_CLASSIFIER] Attempt with ${model} failed:`, err);
+      }
     }
   }
 
