@@ -47,6 +47,16 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Sparkles,
   Trash2,
   PlusCircle,
@@ -531,6 +541,55 @@ export default function AgentDesigner({ agent, onSaved, onDirtyChange }: AgentDe
   const [isAutoSetupOpen, setIsAutoSetupOpen] = useState(false);
   const [autoSetupInput, setAutoSetupInput] = useState('');
   const [isAutoGenerating, setIsAutoGenerating] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+
+  const handleResetToDefault = () => {
+    const defaultTpl = STARTER_TEMPLATES[0];
+    form.setValue('name', 'WhatsApp AI Assistant', { shouldDirty: true });
+    form.setValue('description', '24/7 polite and helpful AI assistant for WhatsApp customer inquiries, business info, pricing, and support.', { shouldDirty: true });
+    form.setValue('fallbackResponse', 'Sorry, I am currently unable to assist with that. A human team member will get back to you shortly.', { shouldDirty: true });
+
+    setSelectedAvatar(defaultTpl.avatar);
+    setMode('ai');
+    setSelectedRole(defaultTpl.role);
+    setSelectedTone(defaultTpl.tone);
+    setSelectedLength(defaultTpl.length);
+    setSelectedEmojiStyle(defaultTpl.emojiStyle);
+    setSelectedLanguage(defaultTpl.language);
+    setActiveGuardrails([...defaultTpl.guardrails]);
+    setCustomDirectives(defaultTpl.customDirectives);
+
+    setAISettings({
+      provider: 'groq',
+      apiKey: '',
+      systemPrompt: 'You are a helpful, professional, and friendly AI assistant for WhatsApp customer conversations. Greet customers warmly and answer questions accurately using verified business knowledge.',
+      maxLen: 500,
+      temperature: 0.7,
+      knowledgeFileIds: [],
+      enableVoiceResponse: false,
+      enableVision: true,
+      voiceProvider: 'google',
+    });
+
+    setRules([]);
+    setDirtyExtra(true);
+    setResetConfirmOpen(false);
+
+    applyPromptBuilder({
+      role: defaultTpl.role,
+      tone: defaultTpl.tone,
+      length: defaultTpl.length,
+      emojiStyle: defaultTpl.emojiStyle,
+      language: defaultTpl.language,
+      guardrails: defaultTpl.guardrails,
+      customDirectives: defaultTpl.customDirectives,
+    });
+
+    toast({
+      title: 'Reset to Default Settings ✨',
+      description: 'AI personality, tone, prompts, and parameters have been reset to default presets. Click "Save AI Personality" to save.',
+    });
+  };
 
   const handleApplyStarterTemplate = (tpl: typeof STARTER_TEMPLATES[0]) => {
     form.setValue('name', tpl.agentName, { shouldDirty: true });
@@ -987,24 +1046,35 @@ export default function AgentDesigner({ agent, onSaved, onDirtyChange }: AgentDe
             </div>
 
             <div className="flex flex-wrap items-center gap-2.5">
-              {!agent && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsAutoSetupOpen(true)}
-                  className="cursor-pointer border-primary/40 hover:bg-primary/10 hover:border-primary text-xs"
-                >
-                  <Wand2 className="mr-1.5 h-3.5 w-3.5 text-primary" />
-                  ✨ AI Auto-Setup
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setResetConfirmOpen(true)}
+                className="cursor-pointer border-border/80 hover:bg-muted text-xs gap-1.5 text-muted-foreground hover:text-foreground"
+                title="Reset all settings to recommended defaults"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Reset to Default Settings
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsAutoSetupOpen(true)}
+                className="cursor-pointer border-primary/40 hover:bg-primary/10 hover:border-primary text-xs"
+              >
+                <Wand2 className="mr-1.5 h-3.5 w-3.5 text-primary" />
+                ✨ AI Auto-Setup
+              </Button>
+
               {isDirty && (
                 <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs">
                   Unsaved changes
                 </Badge>
               )}
-              <Button type="submit" disabled={isSaving} className="cursor-pointer font-medium">
+              <Button type="submit" disabled={isSaving} className="cursor-pointer font-medium bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs">
                 {isSaving ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
@@ -2100,16 +2170,47 @@ export default function AgentDesigner({ agent, onSaved, onDirtyChange }: AgentDe
           </Card>
 
           {/* Submit Actions */}
-          <div className="flex justify-end gap-4">
-            <Button type="submit" size="lg" disabled={isSaving}>
+          <div className="flex items-center justify-between gap-4 pt-4 border-t">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setResetConfirmOpen(true)}
+              className="cursor-pointer gap-2 text-muted-foreground hover:text-foreground"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Reset to Default Settings
+            </Button>
+
+            <Button type="submit" size="lg" disabled={isSaving} className="cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow-sm">
               {isSaving ? (
                 <Loader2 className="mr-2 h-5 w-5 animate-spin" />
               ) : (
                 <Save className="mr-2 h-5 w-5" />
               )}
-              Save Agent Changes
+              Save AI Personality
             </Button>
           </div>
+
+          {/* RESET TO DEFAULT CONFIRMATION DIALOG */}
+          <AlertDialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2">
+                  <RotateCcw className="h-5 w-5 text-amber-400" />
+                  Reset to Default Settings?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will reset the AI personality name, description, avatar, tone of voice, system prompts, guardrails, and model parameters back to the recommended default presets.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel className="cursor-pointer">Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleResetToDefault} className="bg-amber-600 hover:bg-amber-500 text-white cursor-pointer font-semibold">
+                  Reset to Defaults
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </form>
       </Form>
     </TooltipProvider>

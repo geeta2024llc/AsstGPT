@@ -15,7 +15,22 @@ console.log(`[next.config] NEXT_PUBLIC_API_BASE_URL present at build: ${!!proces
 
 const nextConfig: NextConfig = {
   output: isVercelBuild ? undefined : 'standalone',
-  serverExternalPackages: ['@whiskeysockets/baileys', 'ws', 'bufferutil', 'utf-8-validate'],
+  compress: true,
+  experimental: {
+    optimizePackageImports: [
+      'lucide-react',
+      'date-fns',
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-select',
+      '@radix-ui/react-dropdown-menu',
+      '@radix-ui/react-avatar',
+      '@radix-ui/react-tabs',
+      '@radix-ui/react-toast',
+      '@radix-ui/react-switch',
+      '@radix-ui/react-slider',
+      '@radix-ui/react-scroll-area',
+    ],
+  },
   /* config options here */
   typescript: {
     ignoreBuildErrors: true,

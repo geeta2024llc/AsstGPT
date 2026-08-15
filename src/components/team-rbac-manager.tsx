@@ -37,7 +37,11 @@ import {
   Crown,
   UserCheck,
   Eye,
+  Radio,
+  Clock,
+  Sparkles,
 } from 'lucide-react';
+import ConfirmDeleteDialog from '@/components/confirm-delete-dialog';
 import { useToast } from '@/hooks/use-toast';
 import type { TeamMember, UserRole, UserStatus } from '@/types';
 
@@ -151,19 +155,22 @@ export default function TeamRBACManager() {
     }
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Remove "${name}" from this workspace? They will immediately lose access.`)) return;
+  const [memberToDelete, setMemberToDelete] = useState<{ id: string; name: string } | null>(null);
 
+  const confirmDeleteMember = async () => {
+    if (!memberToDelete) return;
     try {
-      const res = await fetch(`/api/team/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/team/${memberToDelete.id}`, { method: 'DELETE' });
       if (!res.ok) {
         const errorData = await res.json();
         throw new Error(errorData.message || 'Failed to remove member');
       }
-      setMembers(prev => prev.filter(m => m.id !== id));
-      toast({ title: 'Member Removed' });
+      setMembers(prev => prev.filter(m => m.id !== memberToDelete.id));
+      toast({ title: 'Member Removed', description: `${memberToDelete.name} was removed from this workspace.` });
     } catch (err) {
       toast({ variant: 'destructive', title: 'Error', description: (err as Error).message });
+    } finally {
+      setMemberToDelete(null);
     }
   };
 
@@ -231,9 +238,9 @@ export default function TeamRBACManager() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => handleDelete(m.id, m.fullName)}
+                        onClick={() => setMemberToDelete({ id: m.id, name: m.fullName })}
                         disabled={isOwner}
-                        className="h-7 w-7 text-destructive hover:text-destructive"
+                        className="h-7 w-7 text-destructive hover:text-destructive cursor-pointer disabled:opacity-40"
                         title={isOwner ? 'The workspace owner cannot be removed' : 'Remove member'}
                       >
                         <Trash2 className="h-3 w-3" />
@@ -345,6 +352,27 @@ export default function TeamRBACManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Confirm Remove Member Dialog */}
+      <ConfirmDeleteDialog
+        isOpen={!!memberToDelete}
+        onOpenChange={(open) => !open && setMemberToDelete(null)}
+        title="Remove Team Member?"
+        itemName={memberToDelete?.name}
+        itemType="team member"
+        description={
+          memberToDelete ? (
+            <>
+              Are you sure you want to remove{' '}
+              <span className="font-semibold text-foreground">"{memberToDelete.name}"</span> from this workspace?
+              They will immediately lose access to the dashboard, inbox, and settings.
+            </>
+          ) : undefined
+        }
+        confirmLabel="Yes, Remove"
+        cancelLabel="No, Cancel"
+        onConfirm={confirmDeleteMember}
+      />
     </div>
   );
 }

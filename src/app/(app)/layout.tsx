@@ -37,24 +37,62 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { toast } = useToast();
+  const [workspace, setWorkspace] = React.useState({
+    name: 'Default Workspace',
+    logoUrl: '',
+  });
   const [user, setUser] = React.useState({
     name: 'Account',
     email: '',
-    avatar: `https://ui-avatars.com/api/?name=Account&background=FF9800&color=fff`,
+    avatar: '',
   });
 
+  const loadWorkspace = React.useCallback(() => {
+    fetch('/api/tenant')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.name) {
+          setWorkspace({
+            name: data.name,
+            logoUrl: data.logoUrl || '',
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   React.useEffect(() => {
+    loadWorkspace();
+
+    const handleWorkspaceUpdated = (e: any) => {
+      if (e?.detail?.name) {
+        setWorkspace({
+          name: e.detail.name,
+          logoUrl: e.detail.logoUrl || '',
+        });
+      } else {
+        loadWorkspace();
+      }
+    };
+
+    window.addEventListener('workspace-updated', handleWorkspaceUpdated);
+
     supabase.auth.getUser().then(({ data }) => {
       const authUser = data?.user;
       if (!authUser) return;
       const name = authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Account';
+      const email = authUser.email || '';
       setUser({
         name,
-        email: authUser.email || '',
-        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=FF9800&color=fff`,
+        email,
+        avatar: authUser.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=FF9800&color=fff`,
       });
     });
-  }, []);
+
+    return () => {
+      window.removeEventListener('workspace-updated', handleWorkspaceUpdated);
+    };
+  }, [loadWorkspace]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -169,23 +207,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </SidebarContent>
         <SidebarFooter>
           <div className="flex w-full items-center gap-2 p-1">
-            <Avatar className="h-8 w-8">
-              <AvatarImage
-                src={user.avatar}
-                alt={user.name}
-              />
-              <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
+            <Avatar className="h-8 w-8 rounded-lg border border-primary/30 bg-primary/10 shrink-0">
+              {workspace.logoUrl ? (
+                <AvatarImage
+                  src={workspace.logoUrl}
+                  alt={workspace.name}
+                  className="rounded-lg object-cover"
+                />
+              ) : null}
+              <AvatarFallback className="rounded-lg font-bold text-xs text-primary bg-primary/15">
+                {workspace.name.slice(0, 2).toUpperCase()}
+              </AvatarFallback>
             </Avatar>
-            <div className="flex flex-col overflow-hidden text-sm flex-1">
-              <span className="truncate font-semibold">{user.name}</span>
-              <span className="truncate text-xs text-muted-foreground">
-                {user.email}
+            <div className="flex flex-col overflow-hidden text-sm flex-1 min-w-0">
+              <span className="truncate font-semibold text-foreground text-xs leading-tight" title={workspace.name}>
+                {workspace.name}
+              </span>
+              <span className="truncate text-[11px] text-muted-foreground leading-tight" title={user.email}>
+                {user.email || 'Workspace Member'}
               </span>
             </div>
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10"
+              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer"
               onClick={handleSignOut}
               title="Sign out"
             >

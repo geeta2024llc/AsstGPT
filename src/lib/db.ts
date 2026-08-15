@@ -254,6 +254,11 @@ export async function getConversations(options?: { limit?: number; offset?: numb
         sentiment: (c.sentiment as any) || 'neutral',
         firstResponseTimeMs: c.first_response_time_ms || undefined,
         resolutionDurationMs: c.resolution_duration_ms || undefined,
+        isStarred: Boolean(
+          c.handoff_metadata?.isStarred ||
+          contact?.tags?.includes('starred') ||
+          contact?.custom_attributes?.isStarred
+        ),
       };
 
       // Deduplicate by contactId if present, otherwise by externalId
@@ -2401,6 +2406,48 @@ export async function updateContactProfile(
   const refreshed = await getContactProfile(chatId);
   if (!refreshed) throw new Error('Contact not found after update');
   return refreshed;
+}
+
+export async function deleteContactProfiles(options: {
+  ids?: string[];
+  externalIds?: string[];
+}): Promise<{ count: number }> {
+  const supabase = getSupabaseAdmin();
+  const { tenantId } = await ensureDefaultTenantAndChannel();
+
+  const idsToDelete = new Set<string>(options.ids || []);
+
+  if (options.externalIds && options.externalIds.length > 0) {
+    const { data: ccData } = await supabase
+      .from('contact_channels')
+      .select('contact_id')
+      .eq('tenant_id', tenantId)
+      .in('external_id', options.externalIds);
+
+    for (const cc of ccData || []) {
+      if (cc.contact_id) {
+        idsToDelete.add(cc.contact_id);
+      }
+    }
+  }
+
+  const finalIds = Array.from(idsToDelete);
+  if (finalIds.length === 0) {
+    return { count: 0 };
+  }
+
+  const { error, count } = await supabase
+    .from('contacts')
+    .delete({ count: 'exact' })
+    .eq('tenant_id', tenantId)
+    .in('id', finalIds);
+
+  if (error) {
+    console.error('Failed to bulk delete contacts:', error);
+    throw new Error(error.message || 'Failed to delete contacts');
+  }
+
+  return { count: count || finalIds.length };
 }
 
 export async function addContactTag(chatId: string, tag: string): Promise<string[]> {

@@ -48,6 +48,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import ConfirmDeleteDialog from '@/components/confirm-delete-dialog';
 
 interface Membership {
   tenantId: string;
@@ -172,15 +173,17 @@ export default function UsersManagementPage() {
   const disabledCount = useMemo(() => users.filter((u) => u.isBanned).length, [users]);
 
   // Toggle Ban / Unban
+  const [userToBan, setUserToBan] = useState<PlatformUser | null>(null);
+
   const handleToggleBan = async (user: PlatformUser) => {
-    const action = user.isBanned ? 'unban' : 'ban';
-    if (
-      action === 'ban' &&
-      !confirm(`Disable login for "${user.email}"? They will be immediately signed out and unable to access the workspace until re-enabled.`)
-    ) {
+    if (!user.isBanned) {
+      setUserToBan(user);
       return;
     }
+    await executeToggleBan(user, 'unban');
+  };
 
+  const executeToggleBan = async (user: PlatformUser, action: 'ban' | 'unban') => {
     setBusyId(user.id);
     try {
       const res = await fetch(`/api/super-admin/users/${user.id}`, {
@@ -201,6 +204,7 @@ export default function UsersManagementPage() {
       toast({ variant: 'destructive', title: 'Error', description: err.message });
     } finally {
       setBusyId(null);
+      setUserToBan(null);
     }
   };
 
@@ -961,6 +965,29 @@ export default function UsersManagementPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Confirm Ban / Suspend Admin Dialog */}
+      <ConfirmDeleteDialog
+        isOpen={!!userToBan}
+        onOpenChange={(open) => !open && setUserToBan(null)}
+        title="Suspend Platform User Access?"
+        itemName={userToBan?.email}
+        itemType="user account"
+        description={
+          userToBan ? (
+            <>
+              Are you sure you want to disable login for{' '}
+              <span className="font-semibold text-foreground">"{userToBan.email}"</span>? They will be immediately
+              signed out and unable to access any workspaces until re-enabled by a Super Admin.
+            </>
+          ) : undefined
+        }
+        confirmLabel="Yes, Suspend User"
+        cancelLabel="No, Cancel"
+        onConfirm={() => {
+          if (userToBan) return executeToggleBan(userToBan, 'ban');
+        }}
+      />
     </div>
   );
 }

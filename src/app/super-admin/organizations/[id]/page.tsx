@@ -19,6 +19,7 @@ import {
 import { Loader2, ArrowLeft, ShieldOff, ShieldCheck, UserCog, Trash2, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { startImpersonation } from '@/lib/impersonation-client';
+import ConfirmDeleteDialog from '@/components/confirm-delete-dialog';
 
 interface OrgDetail {
   id: string;
@@ -57,14 +58,21 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
     fetchOrg();
   }, [id]);
 
+  const [isSuspendModalOpen, setIsSuspendModalOpen] = useState(false);
+  const [impersonateTarget, setImpersonateTarget] = useState<{ userId: string; email?: string } | null>(null);
+
   const handleSuspendToggle = async () => {
     if (!org) return;
-    const action = org.is_active ? 'suspend' : 'reactivate';
-    if (action === 'suspend' && !confirm(`Suspend "${org.name}"? All its members will immediately lose access.`)) return;
+    if (org.is_active) {
+      setIsSuspendModalOpen(true);
+      return;
+    }
+    await executeSuspendToggle('reactivate');
+  };
 
+  const executeSuspendToggle = async (action: 'suspend' | 'reactivate', reason?: string) => {
     setBusy(true);
     try {
-      const reason = action === 'suspend' ? prompt('Reason for suspension (optional):') || undefined : undefined;
       const res = await fetch(`/api/super-admin/organizations/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -77,6 +85,7 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
       toast({ variant: 'destructive', title: 'Error', description: (err as Error).message });
     } finally {
       setBusy(false);
+      setIsSuspendModalOpen(false);
     }
   };
 
@@ -100,14 +109,16 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
     }
   };
 
-  const handleImpersonate = async (userId: string, email?: string) => {
-    if (!confirm(`Impersonate ${email || userId}? You will be signed in as this user and the action will be audit-logged.`)) return;
+  const executeImpersonate = async () => {
+    if (!impersonateTarget) return;
     setBusy(true);
     try {
-      await startImpersonation(userId);
+      await startImpersonation(impersonateTarget.userId);
     } catch (err) {
       toast({ variant: 'destructive', title: 'Impersonation failed', description: (err as Error).message });
       setBusy(false);
+    } finally {
+      setImpersonateTarget(null);
     }
   };
 
@@ -205,7 +216,13 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
                   <TableCell>{m.email}</TableCell>
                   <TableCell className="capitalize">{m.role}</TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" variant="outline" className="gap-1.5" disabled={busy} onClick={() => handleImpersonate(m.userId, m.email)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 cursor-pointer"
+                      disabled={busy}
+                      onClick={() => setImpersonateTarget({ userId: m.userId, email: m.email })}
+                    >
                       <UserCog className="h-3.5 w-3.5" />
                       Impersonate
                     </Button>
@@ -283,6 +300,48 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Confirm Suspend Org Dialog */}
+      <ConfirmDeleteDialog
+        isOpen={isSuspendModalOpen}
+        onOpenChange={setIsSuspendModalOpen}
+        title="Suspend Organization?"
+        itemName={org?.name}
+        itemType="organization"
+        description={
+          org ? (
+            <>
+              Are you sure you want to suspend{' '}
+              <span className="font-semibold text-foreground">"{org.name}"</span>? All member logins and AI agent
+              workflows will immediately be paused.
+            </>
+          ) : undefined
+        }
+        confirmLabel="Yes, Suspend Workspace"
+        cancelLabel="No, Cancel"
+        onConfirm={() => executeSuspendToggle('suspend')}
+      />
+
+      {/* Confirm Impersonation Dialog */}
+      <ConfirmDeleteDialog
+        isOpen={!!impersonateTarget}
+        onOpenChange={(open) => !open && setImpersonateTarget(null)}
+        title="Impersonate Workspace User?"
+        itemName={impersonateTarget?.email || impersonateTarget?.userId}
+        itemType="user"
+        description={
+          impersonateTarget ? (
+            <>
+              Are you sure you want to impersonate{' '}
+              <span className="font-semibold text-foreground">"{impersonateTarget.email || impersonateTarget.userId}"</span>?
+              You will be authenticated into their workspace session. This action is permanently audit-logged.
+            </>
+          ) : undefined
+        }
+        confirmLabel="Yes, Impersonate"
+        cancelLabel="No, Cancel"
+        onConfirm={executeImpersonate}
+      />
     </div>
   );
 }

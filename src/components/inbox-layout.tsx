@@ -49,13 +49,18 @@ import {
   Copy,
   Phone,
   Check,
+  Star,
+  Plus,
+  PhoneCall,
+  UserPlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { formatContactName, formatChatSubtitle, getAvatarInitials, getContactIdentifier, formatPhoneNumber } from '@/lib/format-utils';
 import ContactProfileDrawer from '@/components/contact-profile-drawer';
-import { Conversation, Message, TeamMember, CannedResponse, ConversationNote, isConversationPaused } from '@/types';
+import ConfirmDeleteDialog from '@/components/confirm-delete-dialog';
+import { Conversation, Message, TeamMember, CannedResponse, ConversationNote, isConversationPaused, LeadStage } from '@/types';
 import { format } from 'date-fns';
 
 function playNotificationChime() {
@@ -122,10 +127,53 @@ export default function InboxLayout() {
   }, [searchParams]);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterMode, setFilterMode] = useState<'open' | 'my_chats' | 'unassigned' | 'unread' | 'bot_active' | 'human_takeover' | 'resolved' | 'all'>('open');
+  const [filterMode, setFilterMode] = useState<
+    'open' | 'starred' | 'handoff' | 'my_chats' | 'unassigned' | 'unread' | 'bot_active' | 'human_takeover' | 'resolved' | 'all'
+  >('open');
   const [isCopiedPhone, setIsCopiedPhone] = useState(false);
 
+  // New Chat Dialog State
+  const [isNewChatOpen, setIsNewChatOpen] = useState(false);
+  const [newChatPhone, setNewChatPhone] = useState('');
+  const [newChatName, setNewChatName] = useState('');
+  const [newChatInitialMsg, setNewChatInitialMsg] = useState('');
+  const [newChatResolutionMode, setNewChatResolutionMode] = useState<'ai' | 'human'>('ai');
+  const [newChatStage, setNewChatStage] = useState<LeadStage>('lead');
+  const [isCreatingChat, setIsCreatingChat] = useState(false);
+
   const selectedConversation = conversations.find(c => c.id === selectedConversationId);
+
+  const isHandoffConversation = (c: Conversation) => {
+    return (
+      c.status !== 'resolved' &&
+      (Boolean(c.isBotPaused) ||
+        isConversationPaused(c) ||
+        Boolean(c.handoffReason) ||
+        Boolean(c.takeoverReason) ||
+        c.status === 'pending')
+    );
+  };
+
+  const starredConvosCount = useMemo(
+    () => conversations.filter((c) => !!c.isStarred && c.status !== 'resolved').length,
+    [conversations]
+  );
+  const handoffConvosCount = useMemo(
+    () => conversations.filter(isHandoffConversation).length,
+    [conversations]
+  );
+  const openConvosCount = useMemo(
+    () => conversations.filter((c) => c.status !== 'resolved').length,
+    [conversations]
+  );
+  const botActiveConvosCount = useMemo(
+    () => conversations.filter((c) => !isHandoffConversation(c) && c.status !== 'resolved').length,
+    [conversations]
+  );
+  const resolvedConvosCount = useMemo(
+    () => conversations.filter((c) => c.status === 'resolved').length,
+    [conversations]
+  );
 
   const handleCopyPhone = (phone: string) => {
     if (!phone) return;
@@ -133,6 +181,154 @@ export default function InboxLayout() {
     setIsCopiedPhone(true);
     toast({ title: 'Phone Number Copied 📋', description: phone });
     setTimeout(() => setIsCopiedPhone(false), 2000);
+  };
+
+  // Toggle Favorite / Starred Conversation
+  const handleToggleStar = async (chatId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const currentConvo = conversations.find(c => c.id === chatId);
+    const nextStarred = !currentConvo?.isStarred;
+
+    setConversations(prev =>
+      prev.map(c => c.id === chatId ? { ...c, isStarred: nextStarred } : c)
+    );
+
+    try {
+      const res = await fetch('/api/inbox/star', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId, isStarred: nextStarred }),
+      });
+
+      if (!res.ok) throw new Error('Failed to update star status');
+
+      toast({
+        title: nextStarred ? 'Conversation Starred ⭐' : 'Conversation Unstarred',
+        description: nextStarred
+          ? `Added ${currentConvo?.name || chatId} to your favorite starred list.`
+          : `Removed ${currentConvo?.name || chatId} from favorites.`,
+      });
+    } catch (err: any) {
+      setConversations(prev =>
+        prev.map(c => c.id === chatId ? { ...c, isStarred: !nextStarred } : c)
+      );
+      toast({
+        variant: 'destructive',
+        title: 'Action Failed',
+        description: err.message,
+      });
+    }
+  };
+
+  // Update Lifecycle Stage directly from Inbox
+  const handleUpdateStage = async (chatId: string, newStage: LeadStage) => {
+    const currentConvo = conversations.find(c => c.id === chatId);
+    const prevStage = currentConvo?.stage;
+
+    setConversations(prev =>
+      prev.map(c => c.id === chatId ? { ...c, stage: newStage } : c)
+    );
+
+    try {
+      const res = await fetch(`/api/contacts/${encodeURIComponent(chatId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage: newStage }),
+      });
+
+      if (!res.ok) throw new Error('Failed to update stage');
+
+      toast({
+        title: 'Lifecycle Stage Updated',
+        description: `${currentConvo?.name || 'Customer'} moved to ${newStage.toUpperCase()}.`,
+      });
+    } catch (err: any) {
+      setConversations(prev =>
+        prev.map(c => c.id === chatId ? { ...c, stage: prevStage } : c)
+      );
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: err.message,
+      });
+    }
+  };
+
+  // Create New Conversation & Hand Off
+  const handleCreateNewChat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newChatPhone.trim()) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Please enter a phone number.' });
+      return;
+    }
+
+    setIsCreatingChat(true);
+    try {
+      const digitsOnly = newChatPhone.replace(/\D/g, '');
+      if (digitsOnly.length < 7) {
+        throw new Error('Please enter a valid phone number with country code (e.g. 17868148367).');
+      }
+
+      const formattedJid = `${digitsOnly}@s.whatsapp.net`;
+
+      // 1. Create or update contact profile
+      await fetch(`/api/contacts/${encodeURIComponent(formattedJid)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newChatName.trim() || undefined,
+          stage: newChatStage,
+          phone: digitsOnly,
+        }),
+      });
+
+      // 2. Set takeover mode if human
+      if (newChatResolutionMode === 'human') {
+        await fetch('/api/inbox/takeover', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chatId: formattedJid,
+            action: 'human',
+            reason: 'Manual new chat opened in operator mode',
+          }),
+        });
+      }
+
+      // 3. Send initial message if provided
+      if (newChatInitialMsg.trim()) {
+        await fetch('/api/whatsapp/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: formattedJid,
+            text: newChatInitialMsg.trim(),
+          }),
+        });
+      }
+
+      toast({
+        title: 'New Conversation Started 🎉',
+        description: newChatResolutionMode === 'ai'
+          ? `Handed off to Auto AI for customer ${newChatName || digitsOnly}.`
+          : `Opened in Operator mode for customer ${newChatName || digitsOnly}.`,
+      });
+
+      setIsNewChatOpen(false);
+      setNewChatPhone('');
+      setNewChatName('');
+      setNewChatInitialMsg('');
+      await fetchConversations();
+      setSelectedConversationId(formattedJid);
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Create Chat Failed',
+        description: err.message,
+      });
+    } finally {
+      setIsCreatingChat(false);
+    }
   };
 
   // Slash command autocomplete popup logic (only in message mode)
@@ -161,7 +357,11 @@ export default function InboxLayout() {
       const isResolved = c.status === 'resolved';
 
       let matchesFilter = true;
-      if (filterMode === 'open') {
+      if (filterMode === 'starred') {
+        matchesFilter = Boolean(c.isStarred) && !isResolved;
+      } else if (filterMode === 'handoff') {
+        matchesFilter = isHandoffConversation(c);
+      } else if (filterMode === 'open') {
         matchesFilter = !isResolved;
       } else if (filterMode === 'my_chats') {
         const myId = teamMembers[0]?.id;
@@ -171,9 +371,9 @@ export default function InboxLayout() {
       } else if (filterMode === 'unread') {
         matchesFilter = c.unreadCount > 0;
       } else if (filterMode === 'bot_active') {
-        matchesFilter = !isConversationPaused(c) && !isResolved;
+        matchesFilter = !isHandoffConversation(c) && !isResolved;
       } else if (filterMode === 'human_takeover') {
-        matchesFilter = isConversationPaused(c) && !isResolved;
+        matchesFilter = isHandoffConversation(c);
       } else if (filterMode === 'resolved') {
         matchesFilter = isResolved;
       } else if (filterMode === 'all') {
@@ -528,15 +728,19 @@ export default function InboxLayout() {
     }
   };
 
-  const handleDeleteNote = async (noteId: string) => {
-    if (!confirm('Delete this internal team note?')) return;
+  const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
+
+  const confirmDeleteNote = async () => {
+    if (!noteToDelete) return;
     try {
-      const res = await fetch(`/api/inbox/notes/${noteId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/inbox/notes/${noteToDelete}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete note');
-      setNotes(prev => prev.filter(n => n.id !== noteId));
-      toast({ title: 'Note Deleted' });
+      setNotes(prev => prev.filter(n => n.id !== noteToDelete));
+      toast({ title: 'Note Deleted', description: 'Internal team note was permanently removed.' });
     } catch (err) {
       toast({ variant: 'destructive', title: 'Error', description: (err as Error).message });
+    } finally {
+      setNoteToDelete(null);
     }
   };
 
@@ -657,6 +861,11 @@ export default function InboxLayout() {
               <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4" title={`${filteredConversations.length} conversations in view`}>
                 {filteredConversations.length}
               </Badge>
+              {handoffConvosCount > 0 && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 font-bold animate-pulse" title={`${handoffConvosCount} conversations in handoff`}>
+                  🚨 {handoffConvosCount} handoff
+                </Badge>
+              )}
               {totalUnreadConvos > 0 && (
                 <Badge variant="default" className="text-[10px] px-1.5 py-0 h-4 bg-primary text-primary-foreground font-bold" title={`${totalUnreadConvos} unread conversations`}>
                   {totalUnreadConvos} unread
@@ -670,9 +879,20 @@ export default function InboxLayout() {
 
             <div className="flex items-center gap-1">
               <Button
+                variant="default"
+                size="sm"
+                className="h-7 text-xs px-2.5 gap-1 font-semibold bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer shadow-xs"
+                onClick={() => setIsNewChatOpen(true)}
+                title="Start a new conversation and hand off to AI or human"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>New Chat</span>
+              </Button>
+
+              <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 text-muted-foreground"
+                className="h-7 w-7 text-muted-foreground cursor-pointer"
                 onClick={() => setSoundEnabled(p => !p)}
                 title={soundEnabled ? 'Notification chime on' : 'Notification chime muted'}
               >
@@ -680,18 +900,19 @@ export default function InboxLayout() {
               </Button>
 
               <Select value={filterMode} onValueChange={(val: any) => setFilterMode(val)}>
-                <SelectTrigger className="h-7 text-xs px-2 w-[145px] bg-background">
+                <SelectTrigger className="h-7 text-xs px-2 w-[130px] bg-background cursor-pointer">
                   <Filter className="h-3 w-3 mr-1 text-muted-foreground" />
                   <SelectValue placeholder="Filter" />
                 </SelectTrigger>
                 <SelectContent align="end">
-                  <SelectItem value="open" className="text-xs">Active / Open</SelectItem>
+                  <SelectItem value="open" className="text-xs">Active / Open ({openConvosCount})</SelectItem>
+                  <SelectItem value="starred" className="text-xs font-semibold text-amber-500">⭐ Starred ({starredConvosCount})</SelectItem>
+                  <SelectItem value="handoff" className="text-xs font-semibold text-amber-500">🚨 Handoff ({handoffConvosCount})</SelectItem>
+                  <SelectItem value="bot_active" className="text-xs">🤖 Bot Active ({botActiveConvosCount})</SelectItem>
                   <SelectItem value="my_chats" className="text-xs">👤 My Assigned Chats</SelectItem>
                   <SelectItem value="unassigned" className="text-xs">📥 Unassigned Queue</SelectItem>
                   <SelectItem value="unread" className="text-xs">🔴 Unread</SelectItem>
-                  <SelectItem value="bot_active" className="text-xs">🤖 Bot Active</SelectItem>
-                  <SelectItem value="human_takeover" className="text-xs">⚡ Live Takeover</SelectItem>
-                  <SelectItem value="resolved" className="text-xs">✅ Resolved</SelectItem>
+                  <SelectItem value="resolved" className="text-xs">✅ Resolved ({resolvedConvosCount})</SelectItem>
                   <SelectItem value="all" className="text-xs">All Chats</SelectItem>
                 </SelectContent>
               </Select>
@@ -704,6 +925,93 @@ export default function InboxLayout() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="h-8 text-xs bg-background"
           />
+
+          {/* Quick Filter Section: All, Starred, Handoff, Auto AI, Resolved */}
+          <div className="flex items-center gap-1 overflow-x-auto pb-0.5 pt-0.5 no-scrollbar">
+            <button
+              type="button"
+              onClick={() => setFilterMode('open')}
+              className={cn(
+                'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1',
+                filterMode === 'open'
+                  ? 'bg-primary text-primary-foreground font-bold shadow-xs'
+                  : 'bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted'
+              )}
+            >
+              <span>All</span>
+              <span className="text-[10px] opacity-80">({openConvosCount})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterMode('starred')}
+              className={cn(
+                'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 border',
+                filterMode === 'starred'
+                  ? 'bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-md shadow-amber-500/20'
+                  : starredConvosCount > 0
+                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
+                  : 'bg-muted/60 text-muted-foreground border-transparent hover:text-foreground hover:bg-muted'
+              )}
+            >
+              <span>⭐ Starred</span>
+              <span className={cn(
+                'text-[10px] px-1 py-0 rounded-full font-bold',
+                starredConvosCount > 0 && filterMode !== 'starred' ? 'bg-amber-500 text-slate-950' : 'opacity-80'
+              )}>
+                {starredConvosCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterMode('handoff')}
+              className={cn(
+                'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 border',
+                filterMode === 'handoff'
+                  ? 'bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-md shadow-amber-500/20'
+                  : handoffConvosCount > 0
+                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
+                  : 'bg-muted/60 text-muted-foreground border-transparent hover:text-foreground hover:bg-muted'
+              )}
+            >
+              <span>🚨 Handoff</span>
+              <span className={cn(
+                'text-[10px] px-1 py-0 rounded-full font-bold',
+                handoffConvosCount > 0 && filterMode !== 'handoff' ? 'bg-amber-500 text-slate-950' : 'opacity-80'
+              )}>
+                {handoffConvosCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterMode('bot_active')}
+              className={cn(
+                'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1',
+                filterMode === 'bot_active'
+                  ? 'bg-emerald-600 text-white font-bold shadow-xs'
+                  : 'bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted'
+              )}
+            >
+              <span>🤖 Auto AI</span>
+              <span className="text-[10px] opacity-80">({botActiveConvosCount})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterMode('resolved')}
+              className={cn(
+                'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1',
+                filterMode === 'resolved'
+                  ? 'bg-slate-700 text-white font-bold shadow-xs'
+                  : 'bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted'
+              )}
+            >
+              <span>✓ Resolved</span>
+              <span className="text-[10px] opacity-80">({resolvedConvosCount})</span>
+            </button>
+          </div>
         </div>
 
         <ScrollArea className="flex-1">
@@ -772,9 +1080,19 @@ export default function InboxLayout() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
                       <p className="font-semibold text-sm truncate text-foreground">{displayName}</p>
-                      <span className="text-[11px] text-muted-foreground whitespace-nowrap ml-2 shrink-0">
-                        {formatTimestamp(convo.lastMessage.timestamp)}
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                        <button
+                          type="button"
+                          onClick={(e) => handleToggleStar(convo.id, e)}
+                          className="text-muted-foreground hover:text-amber-400 p-0.5 rounded transition-colors cursor-pointer"
+                          title={convo.isStarred ? 'Starred favorite (Click to unstar)' : 'Star conversation as favorite'}
+                        >
+                          <Star className={cn('h-3.5 w-3.5', convo.isStarred ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/30 hover:text-amber-400')} />
+                        </button>
+                        <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                          {formatTimestamp(convo.lastMessage.timestamp)}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Prominent phone number display if the user has a custom name */}
@@ -794,22 +1112,25 @@ export default function InboxLayout() {
                         <span className="text-[10px] px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1 bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-500/20">
                           ✓ Resolved
                         </span>
+                      ) : isPaused || convo.handoffReason ? (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-1 bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                          🚨 Handoff
+                        </span>
                       ) : (
-                        <span
-                          className={cn(
-                            'text-[10px] px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1',
-                            isPaused
-                              ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
-                              : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                          )}
-                        >
-                          {isPaused ? '👤 Takeover' : '🤖 AI Active'}
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                          🤖 AI Active
                         </span>
                       )}
 
                       {convo.stage && (
-                        <span className="text-[9px] px-1.5 py-0 rounded border capitalize bg-muted text-muted-foreground font-medium">
-                          {convo.stage === 'vip' ? '★ VIP' : convo.stage}
+                        <span className={cn('text-[9px] px-1.5 py-0 rounded border capitalize font-medium', {
+                          'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20': convo.stage === 'lead',
+                          'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20': convo.stage === 'prospect',
+                          'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20': convo.stage === 'customer',
+                          'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 font-semibold': convo.stage === 'vip',
+                          'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20': convo.stage === 'churned',
+                        })}>
+                          {convo.stage === 'vip' ? '★ VIP' : convo.stage === 'lead' ? '🎯 Lead' : convo.stage === 'prospect' ? '⚡ Prospect' : convo.stage === 'customer' ? '💎 Customer' : convo.stage === 'churned' ? '⚠️ Churned' : convo.stage}
                         </span>
                       )}
 
@@ -872,17 +1193,42 @@ export default function InboxLayout() {
                             <h3 className="font-headline font-semibold text-sm truncate">
                               {ident.displayName}
                             </h3>
-                            {selectedConversation.stage && (
-                              <span className={cn('text-[10px] px-1.5 py-0 rounded border capitalize font-medium', {
-                                'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20': selectedConversation.stage === 'lead',
-                                'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20': selectedConversation.stage === 'prospect',
-                                'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20': selectedConversation.stage === 'customer',
-                                'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 font-semibold': selectedConversation.stage === 'vip',
-                                'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20': selectedConversation.stage === 'churned',
-                              })}>
-                                {selectedConversation.stage === 'vip' ? '★ VIP' : selectedConversation.stage}
-                              </span>
-                            )}
+
+                            {/* Star Favorite Toggle Button */}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-muted-foreground hover:text-amber-400 cursor-pointer"
+                              onClick={(e) => handleToggleStar(selectedConversation.id, e)}
+                              title={selectedConversation.isStarred ? 'Starred favorite (Click to unstar)' : 'Star conversation as favorite'}
+                            >
+                              <Star className={cn('h-3.5 w-3.5', selectedConversation.isStarred ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/40 hover:text-amber-400')} />
+                            </Button>
+
+                            {/* Interactive Lifecycle Stage Selector Dropdown */}
+                            <Select
+                              value={selectedConversation.stage || 'lead'}
+                              onValueChange={(val: any) => handleUpdateStage(selectedConversation.id, val)}
+                            >
+                              <SelectTrigger className={cn(
+                                'h-6 text-[10px] px-2 font-semibold border rounded-md shadow-none cursor-pointer',
+                                selectedConversation.stage === 'lead' && 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30',
+                                selectedConversation.stage === 'prospect' && 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30',
+                                selectedConversation.stage === 'customer' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
+                                selectedConversation.stage === 'vip' && 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 font-bold',
+                                selectedConversation.stage === 'churned' && 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30',
+                              )}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="lead" className="text-xs">🎯 Lead</SelectItem>
+                                <SelectItem value="prospect" className="text-xs">⚡ Prospect</SelectItem>
+                                <SelectItem value="customer" className="text-xs">💎 Customer</SelectItem>
+                                <SelectItem value="vip" className="text-xs font-semibold text-amber-500">★ VIP</SelectItem>
+                                <SelectItem value="churned" className="text-xs text-rose-500">⚠️ Churned</SelectItem>
+                              </SelectContent>
+                            </Select>
+
                             {selectedConversation.sentiment && selectedConversation.sentiment !== 'neutral' && (
                               <span
                                 className={cn(
@@ -897,6 +1243,11 @@ export default function InboxLayout() {
                                 {selectedConversation.sentiment === 'negative' && '😟 Negative'}
                                 {selectedConversation.sentiment === 'frustrated' && '😠 Frustrated'}
                               </span>
+                            )}
+                            {isSelectedConvoPaused && !isSelectedConvoResolved && (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 font-bold flex items-center gap-1">
+                                🚨 Handoff
+                              </Badge>
                             )}
                             {isSelectedConvoResolved && (
                               <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-slate-500/10 text-slate-600 dark:text-slate-400">
@@ -1145,7 +1496,7 @@ export default function InboxLayout() {
                                 variant="ghost"
                                 size="icon"
                                 className="h-5 w-5 text-amber-700 hover:text-destructive hover:bg-amber-500/20"
-                                onClick={() => handleDeleteNote(note.id)}
+                                onClick={() => setNoteToDelete(note.id)}
                                 title="Delete note"
                               >
                                 <Trash2 className="h-3 w-3" />
@@ -1431,6 +1782,160 @@ export default function InboxLayout() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Start New Conversation Modal */}
+      <Dialog open={isNewChatOpen} onOpenChange={setIsNewChatOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <form onSubmit={handleCreateNewChat}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-lg font-headline">
+                <Plus className="h-5 w-5 text-primary" />
+                <span>Start New Conversation</span>
+              </DialogTitle>
+              <DialogDescription>
+                Initiate a new WhatsApp thread, assign an initial customer lifecycle stage, and optionally hand off directly to Auto AI to resolve.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">
+                    Phone Number / WhatsApp JID <span className="text-rose-500">*</span>
+                  </label>
+                  <Input
+                    value={newChatPhone}
+                    onChange={(e) => setNewChatPhone(e.target.value)}
+                    placeholder="+1 786 814 8367"
+                    required
+                    className="h-9 text-xs"
+                  />
+                  <p className="text-[10px] text-muted-foreground">With country code (e.g. 17868148367)</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">
+                    Contact Full Name (Optional)
+                  </label>
+                  <Input
+                    value={newChatName}
+                    onChange={(e) => setNewChatName(e.target.value)}
+                    placeholder="e.g. Sarah Connor"
+                    className="h-9 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">
+                    Resolution Mode
+                  </label>
+                  <Select
+                    value={newChatResolutionMode}
+                    onValueChange={(val: 'ai' | 'human') => setNewChatResolutionMode(val)}
+                  >
+                    <SelectTrigger className="h-9 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ai" className="text-xs">
+                        🤖 Auto AI (Autonomous Bot)
+                      </SelectItem>
+                      <SelectItem value="human" className="text-xs">
+                        👤 Human Operator Takeover
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-muted-foreground">
+                    {newChatResolutionMode === 'ai'
+                      ? 'AI will automatically process and respond to messages'
+                      : 'Bot will be paused; you will reply manually'}
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">
+                    Lifecycle Stage
+                  </label>
+                  <Select
+                    value={newChatStage}
+                    onValueChange={(val: any) => setNewChatStage(val)}
+                  >
+                    <SelectTrigger className="h-9 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="lead" className="text-xs">🎯 Lead</SelectItem>
+                      <SelectItem value="prospect" className="text-xs">⚡ Prospect</SelectItem>
+                      <SelectItem value="customer" className="text-xs">💎 Customer</SelectItem>
+                      <SelectItem value="vip" className="text-xs font-semibold text-amber-500">★ VIP</SelectItem>
+                      <SelectItem value="churned" className="text-xs text-rose-500">⚠️ Churned</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">
+                  Initial Outbound Message (Optional)
+                </label>
+                <Input
+                  value={newChatInitialMsg}
+                  onChange={(e) => setNewChatInitialMsg(e.target.value)}
+                  placeholder="Hi! Following up on your inquiry..."
+                  className="h-9 text-xs"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  If provided, this message will be sent immediately via WhatsApp.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsNewChatOpen(false)}
+                disabled={isCreatingChat}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                className="gap-1.5 font-semibold bg-primary text-primary-foreground"
+                disabled={isCreatingChat}
+              >
+                {isCreatingChat ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Creating...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-3.5 w-3.5" />
+                    <span>{newChatResolutionMode === 'ai' ? 'Start & Hand Off to AI' : 'Start Conversation'}</span>
+                  </>
+                )}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm Delete Note Dialog */}
+      <ConfirmDeleteDialog
+        isOpen={!!noteToDelete}
+        onOpenChange={(open) => !open && setNoteToDelete(null)}
+        title="Delete Internal Note?"
+        description="Are you sure you want to delete this internal team note? This action cannot be undone."
+        itemType="note"
+        confirmLabel="Yes, Delete"
+        cancelLabel="No, Cancel"
+        onConfirm={confirmDeleteNote}
+      />
 
       {/* Contact CRM Profile Drawer */}
       <ContactProfileDrawer

@@ -1,8 +1,108 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { withApiAuth } from '@/lib/api-guard';
 import { getSupabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
+
+export const GET = withApiAuth(async (_req, ctx) => {
+  if (!ctx.userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const admin = getSupabaseAdmin();
+  const { data: userRecord } = await admin
+    .from('users')
+    .select('id, email, full_name, avatar_url, role')
+    .eq('id', ctx.userId)
+    .maybeSingle();
+
+  const { data: authUser } = await admin.auth.admin.getUserById(ctx.userId);
+
+  const fullName = userRecord?.full_name || authUser?.user?.user_metadata?.full_name || '';
+  const email = userRecord?.email || authUser?.user?.email || '';
+  const avatarUrl = userRecord?.avatar_url || authUser?.user?.user_metadata?.avatar_url || '';
+  const role = userRecord?.role || 'operator';
+
+  return NextResponse.json({
+    id: ctx.userId,
+    email,
+    fullName,
+    avatarUrl,
+    role,
+  });
+});
+
+export const PATCH = withApiAuth(async (req: NextRequest, ctx) => {
+  if (!ctx.userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const body = await req.json();
+    const { fullName, avatarUrl, newPassword } = body;
+    const admin = getSupabaseAdmin();
+
+    const authUpdates: any = { user_metadata: {} };
+    const dbUpdates: any = {};
+
+    if (typeof fullName === 'string') {
+      const trimmed = fullName.trim();
+      if (!trimmed) {
+        return NextResponse.json({ error: 'Full name cannot be empty' }, { status: 400 });
+      }
+      authUpdates.user_metadata.full_name = trimmed;
+      dbUpdates.full_name = trimmed;
+    }
+
+    if (typeof avatarUrl === 'string') {
+      const trimmed = avatarUrl.trim();
+      authUpdates.user_metadata.avatar_url = trimmed || null;
+      dbUpdates.avatar_url = trimmed || null;
+    }
+
+    if (typeof newPassword === 'string' && newPassword.length > 0) {
+      if (newPassword.length < 6) {
+        return NextResponse.json(
+          { error: 'New password must be at least 6 characters long.' },
+          { status: 400 }
+        );
+      }
+      authUpdates.password = newPassword;
+    }
+
+    // Update Supabase Auth User
+    const { data: updatedAuthUser, error: authErr } = await admin.auth.admin.updateUserById(
+      ctx.userId,
+      authUpdates
+    );
+
+    if (authErr) {
+      throw new Error(authErr.message || 'Failed to update user profile in auth');
+    }
+
+    // Update users table
+    if (Object.keys(dbUpdates).length > 0) {
+      await admin.from('users').update(dbUpdates).eq('id', ctx.userId);
+    }
+
+    return NextResponse.json({
+      success: true,
+      user: {
+        id: ctx.userId,
+        fullName: updatedAuthUser?.user?.user_metadata?.full_name || fullName,
+        avatarUrl: updatedAuthUser?.user?.user_metadata?.avatar_url || avatarUrl,
+        email: updatedAuthUser?.user?.email,
+      },
+      message: 'Account updated successfully.',
+    });
+  } catch (error: any) {
+    console.error('Failed to update account:', error);
+    return NextResponse.json(
+      { error: error.message || 'Failed to update account profile' },
+      { status: 500 }
+    );
+  }
+});
 
 export const DELETE = withApiAuth(async (_req, ctx) => {
   if (!ctx.userId) {

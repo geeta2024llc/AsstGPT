@@ -46,7 +46,9 @@ import {
   HelpCircle,
   Loader2,
   ArrowUpDown,
+  Info,
 } from 'lucide-react';
+import ConfirmDeleteDialog from '@/components/confirm-delete-dialog';
 import { useToast } from '@/hooks/use-toast';
 import type { HandoffRule, HandoffRuleType, TeamMember } from '@/types';
 
@@ -185,15 +187,19 @@ export default function HandoffRulesManager() {
     }
   };
 
-  const handleDeleteRule = async (ruleId: string, ruleName: string) => {
-    if (!confirm(`Are you sure you want to delete rule "${ruleName}"?`)) return;
+  const [ruleToDelete, setRuleToDelete] = useState<{ id: string; name: string } | null>(null);
+
+  const confirmDeleteRule = async () => {
+    if (!ruleToDelete) return;
     try {
-      const res = await fetch(`/api/handoff/rules/${ruleId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/handoff/rules/${ruleToDelete.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete rule');
-      setRules(prev => prev.filter(r => r.id !== ruleId));
-      toast({ title: 'Rule Deleted', description: `Rule "${ruleName}" was removed.` });
+      setRules(prev => prev.filter(r => r.id !== ruleToDelete.id));
+      toast({ title: 'Rule Deleted', description: `Rule "${ruleToDelete.name}" was removed.` });
     } catch (err) {
       toast({ variant: 'destructive', title: 'Delete Failed', description: (err as Error).message });
+    } finally {
+      setRuleToDelete(null);
     }
   };
 
@@ -399,8 +405,8 @@ export default function HandoffRulesManager() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => handleDeleteRule(rule.id, rule.name)}
+                        className="h-8 w-8 text-destructive hover:text-destructive cursor-pointer"
+                        onClick={() => setRuleToDelete({ id: rule.id, name: rule.name })}
                         title="Delete Rule"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -712,6 +718,27 @@ export default function HandoffRulesManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Confirm Delete Rule Dialog */}
+      <ConfirmDeleteDialog
+        isOpen={!!ruleToDelete}
+        onOpenChange={(open) => !open && setRuleToDelete(null)}
+        title="Delete Handoff Rule?"
+        itemName={ruleToDelete?.name}
+        itemType="handoff rule"
+        description={
+          ruleToDelete ? (
+            <>
+              Are you sure you want to delete the rule{' '}
+              <span className="font-semibold text-foreground">"{ruleToDelete.name}"</span>? AI escalation criteria
+              defined by this rule will no longer be applied.
+            </>
+          ) : undefined
+        }
+        confirmLabel="Yes, Delete"
+        cancelLabel="No, Cancel"
+        onConfirm={confirmDeleteRule}
+      />
     </div>
   );
 }

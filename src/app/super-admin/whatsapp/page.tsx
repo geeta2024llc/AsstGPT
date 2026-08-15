@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import ConfirmDeleteDialog from '@/components/confirm-delete-dialog';
 
 interface WhatsappData {
   liveConnection: {
@@ -49,8 +50,9 @@ export default function WhatsappMonitorPage() {
     fetchData(p);
   };
 
-  const handleReset = async () => {
-    if (!confirm('Force-reset the shared WhatsApp session? This logs it out and clears auth state -- a fresh QR scan will be required.')) return;
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false);
+
+  const executeReset = async () => {
     setResetting(true);
     try {
       const res = await fetch('/api/super-admin/whatsapp/default/reset', { method: 'POST' });
@@ -61,6 +63,7 @@ export default function WhatsappMonitorPage() {
       toast({ variant: 'destructive', title: 'Error', description: (err as Error).message });
     } finally {
       setResetting(false);
+      setConfirmResetOpen(false);
     }
   };
 
@@ -85,7 +88,7 @@ export default function WhatsappMonitorPage() {
             <CardTitle>Live Connection</CardTitle>
             <CardDescription>Leader-elected shared session (src/lib/whatsapp-leader.ts)</CardDescription>
           </div>
-          <Button variant="destructive" size="sm" className="gap-1.5" disabled={resetting} onClick={handleReset}>
+          <Button variant="destructive" size="sm" className="gap-1.5 cursor-pointer" disabled={resetting} onClick={() => setConfirmResetOpen(true)}>
             <RotateCcw className="h-3.5 w-3.5" />
             Force Reset
           </Button>
@@ -177,6 +180,17 @@ export default function WhatsappMonitorPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Confirm WhatsApp Session Reset Dialog */}
+      <ConfirmDeleteDialog
+        isOpen={confirmResetOpen}
+        onOpenChange={setConfirmResetOpen}
+        title="Force-Reset WhatsApp Session?"
+        description="Are you sure you want to force-reset the shared WhatsApp connection? This logs it out and clears the authentication credentials. A fresh QR scan will immediately be required to reconnect."
+        confirmLabel="Yes, Reset Session"
+        cancelLabel="No, Cancel"
+        onConfirm={executeReset}
+      />
     </div>
   );
 }

@@ -38,7 +38,10 @@ import {
   CheckCircle,
   AlertTriangle,
   Zap,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
+import ConfirmDeleteDialog from '@/components/confirm-delete-dialog';
 import { useToast } from '@/hooks/use-toast';
 import type { WebhookConfig, WebhookEventType } from '@/types';
 import { format } from 'date-fns';
@@ -203,16 +206,19 @@ export default function WebhookManager() {
     }
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete the webhook "${name}"?`)) return;
+  const [webhookToDelete, setWebhookToDelete] = useState<{ id: string; name: string } | null>(null);
 
+  const confirmDeleteWebhook = async () => {
+    if (!webhookToDelete) return;
     try {
-      const res = await fetch(`/api/webhooks/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/webhooks/${webhookToDelete.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete webhook');
-      setWebhooks(prev => prev.filter(w => w.id !== id));
-      toast({ title: 'Webhook Deleted' });
+      setWebhooks(prev => prev.filter(w => w.id !== webhookToDelete.id));
+      toast({ title: 'Webhook Deleted', description: `Webhook "${webhookToDelete.name}" was removed.` });
     } catch (err) {
       toast({ variant: 'destructive', title: 'Error', description: (err as Error).message });
+    } finally {
+      setWebhookToDelete(null);
     }
   };
 
@@ -349,8 +355,9 @@ export default function WebhookManager() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleDelete(w.id, w.name)}
-                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={() => setWebhookToDelete({ id: w.id, name: w.name })}
+                      className="h-8 w-8 text-destructive hover:text-destructive cursor-pointer"
+                      title="Delete Webhook"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -598,6 +605,27 @@ export default function WebhookManager() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Confirm Delete Webhook Dialog */}
+      <ConfirmDeleteDialog
+        isOpen={!!webhookToDelete}
+        onOpenChange={(open) => !open && setWebhookToDelete(null)}
+        title="Delete Outbound Webhook?"
+        itemName={webhookToDelete?.name}
+        itemType="webhook endpoint"
+        description={
+          webhookToDelete ? (
+            <>
+              Are you sure you want to delete the webhook{' '}
+              <span className="font-semibold text-foreground">"{webhookToDelete.name}"</span>? Outbound event
+              dispatches to this endpoint will immediately cease.
+            </>
+          ) : undefined
+        }
+        confirmLabel="Yes, Delete"
+        cancelLabel="No, Cancel"
+        onConfirm={confirmDeleteWebhook}
+      />
     </div>
   );
 }

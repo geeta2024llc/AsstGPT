@@ -121,6 +121,9 @@ export default function WorkspaceSettingsManager() {
       if (!res.ok) throw new Error(data.message || 'Failed to save workspace settings');
 
       applyProfile(data);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('workspace-updated', { detail: data }));
+      }
       toast({ title: 'Workspace Updated', description: 'Your changes have been saved.' });
     } catch (err) {
       toast({ variant: 'destructive', title: 'Save Failed', description: (err as Error).message });

@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Mail, Send, Loader2, Copy, Check, Trash2, Clock, ShieldCheck, XCircle } from 'lucide-react';
+import ConfirmDeleteDialog from '@/components/confirm-delete-dialog';
 import { useToast } from '@/hooks/use-toast';
 import type { InvitationRole, TenantInvitation } from '@/types';
 
@@ -95,15 +96,19 @@ export default function TeamInviteManager() {
     }
   };
 
-  const handleRevoke = async (id: string, emailAddr: string) => {
-    if (!confirm(`Revoke the pending invitation for "${emailAddr}"?`)) return;
+  const [inviteToRevoke, setInviteToRevoke] = useState<{ id: string; email: string } | null>(null);
+
+  const confirmRevokeInvite = async () => {
+    if (!inviteToRevoke) return;
     try {
-      const res = await fetch(`/api/team/invitations/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/team/invitations/${inviteToRevoke.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to revoke invitation');
       await fetchInvitations();
-      toast({ title: 'Invitation Revoked' });
+      toast({ title: 'Invitation Revoked', description: `Pending invitation for "${inviteToRevoke.email}" was revoked.` });
     } catch (err) {
       toast({ variant: 'destructive', title: 'Error', description: (err as Error).message });
+    } finally {
+      setInviteToRevoke(null);
     }
   };
 
@@ -191,8 +196,8 @@ export default function TeamInviteManager() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7 text-destructive hover:text-destructive"
-                        onClick={() => handleRevoke(inv.id, inv.email)}
+                        className="h-7 w-7 text-destructive hover:text-destructive cursor-pointer"
+                        onClick={() => setInviteToRevoke({ id: inv.id, email: inv.email })}
                         title="Revoke invitation"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -205,6 +210,27 @@ export default function TeamInviteManager() {
           )}
         </div>
       </CardContent>
+
+      {/* Confirm Revoke Invite Dialog */}
+      <ConfirmDeleteDialog
+        isOpen={!!inviteToRevoke}
+        onOpenChange={(open) => !open && setInviteToRevoke(null)}
+        title="Revoke Workspace Invitation?"
+        itemName={inviteToRevoke?.email}
+        itemType="invitation"
+        description={
+          inviteToRevoke ? (
+            <>
+              Are you sure you want to revoke the pending invitation for{' '}
+              <span className="font-semibold text-foreground">"{inviteToRevoke.email}"</span>? The invite link will
+              be invalidated immediately.
+            </>
+          ) : undefined
+        }
+        confirmLabel="Yes, Revoke"
+        cancelLabel="No, Cancel"
+        onConfirm={confirmRevokeInvite}
+      />
     </Card>
   );
 }

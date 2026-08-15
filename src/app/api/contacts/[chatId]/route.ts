@@ -65,3 +65,32 @@ export const PUT = withApiAuth(
   },
   { roles: ['admin', 'operator'] }
 );
+
+export const DELETE = withApiAuth(
+  async (
+    _request: NextRequest,
+    ctx
+  ) => {
+    try {
+      const url = new URL(_request.url);
+      const chatId = url.pathname.split('/').pop() || '';
+      const decodedChatId = decodeURIComponent(chatId);
+
+      const { deleteContactProfiles } = await import('@/lib/db');
+      const result = await deleteContactProfiles({ externalIds: [decodedChatId] });
+
+      await addLog({
+        user: ctx.userId || 'Admin',
+        action: 'Contact Deleted',
+        details: `Deleted CRM contact profile for ${decodedChatId}`,
+        type: 'warning',
+      });
+
+      return NextResponse.json({ success: true, count: result.count });
+    } catch (error: any) {
+      console.error('Failed to delete contact profile:', error);
+      return NextResponse.json({ message: error.message || 'Failed to delete contact profile' }, { status: 500 });
+    }
+  },
+  { roles: ['admin', 'operator'] }
+);

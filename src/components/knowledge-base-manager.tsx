@@ -33,6 +33,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import Link from 'next/link';
+import ConfirmDeleteDialog from '@/components/confirm-delete-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -348,14 +349,19 @@ export default function KnowledgeBaseManager() {
     }
   };
 
-  const handleDelete = async (fileId: string, fileName: string) => {
+  const [fileToDelete, setFileToDelete] = useState<{ id: string; name: string } | null>(null);
+
+  const confirmDeleteFile = async () => {
+    if (!fileToDelete) return;
     try {
-      const res = await fetch(`/api/knowledge?id=${fileId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/knowledge?id=${fileToDelete.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete file.');
-      toast({ title: 'Source Removed', description: `"${fileName}" deleted.` });
+      toast({ title: 'Source Removed', description: `"${fileToDelete.name}" was permanently removed from AI memory.` });
       fetchFiles();
     } catch (error) {
       toast({ variant: 'destructive', title: 'Error', description: (error as Error).message });
+    } finally {
+      setFileToDelete(null);
     }
   };
 
@@ -760,7 +766,7 @@ export default function KnowledgeBaseManager() {
                         size="icon"
                         className="h-7 w-7 text-muted-foreground hover:text-destructive cursor-pointer"
                         title="Delete source"
-                        onClick={() => handleDelete(file.id, file.fileName)}
+                        onClick={() => setFileToDelete({ id: file.id, name: file.fileName })}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
@@ -818,8 +824,9 @@ export default function KnowledgeBaseManager() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                          onClick={() => handleDelete(file.id, file.fileName)}
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive cursor-pointer"
+                          title="Delete source"
+                          onClick={() => setFileToDelete({ id: file.id, name: file.fileName })}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </Button>
@@ -1088,6 +1095,27 @@ export default function KnowledgeBaseManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Confirm Delete Knowledge Base Source Dialog */}
+      <ConfirmDeleteDialog
+        isOpen={!!fileToDelete}
+        onOpenChange={(open) => !open && setFileToDelete(null)}
+        title="Delete Knowledge Source?"
+        itemName={fileToDelete?.name}
+        itemType="knowledge base source"
+        description={
+          fileToDelete ? (
+            <>
+              Are you sure you want to delete the source{' '}
+              <span className="font-semibold text-foreground">"{fileToDelete.name}"</span>? The AI will no longer
+              reference or search this content when answering customer inquiries.
+            </>
+          ) : undefined
+        }
+        confirmLabel="Yes, Delete"
+        cancelLabel="No, Cancel"
+        onConfirm={confirmDeleteFile}
+      />
     </div>
   );
 }

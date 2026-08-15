@@ -38,6 +38,7 @@ import {
   Check,
   Search,
 } from 'lucide-react';
+import ConfirmDeleteDialog from '@/components/confirm-delete-dialog';
 import { useToast } from '@/hooks/use-toast';
 import type { CannedResponse } from '@/types';
 
@@ -159,15 +160,19 @@ export default function CannedResponsesManager() {
     }
   };
 
-  const handleDelete = async (item: CannedResponse) => {
-    if (!confirm(`Delete quick reply "/${item.shortcut}" (${item.title})?`)) return;
+  const [itemToDelete, setItemToDelete] = useState<CannedResponse | null>(null);
+
+  const confirmDeleteItem = async () => {
+    if (!itemToDelete) return;
     try {
-      const res = await fetch(`/api/inbox/canned-responses/${item.id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/inbox/canned-responses/${itemToDelete.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete quick reply');
-      setResponses(prev => prev.filter(r => r.id !== item.id));
-      toast({ title: 'Deleted', description: `Quick reply "/${item.shortcut}" was removed.` });
+      setResponses(prev => prev.filter(r => r.id !== itemToDelete.id));
+      toast({ title: 'Deleted', description: `Quick reply "/${itemToDelete.shortcut}" was removed.` });
     } catch (err) {
       toast({ variant: 'destructive', title: 'Delete Failed', description: (err as Error).message });
+    } finally {
+      setItemToDelete(null);
     }
   };
 
@@ -287,8 +292,8 @@ export default function CannedResponsesManager() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 text-destructive hover:text-destructive"
-                      onClick={() => handleDelete(item)}
+                      className="h-7 w-7 text-destructive hover:text-destructive cursor-pointer"
+                      onClick={() => setItemToDelete(item)}
                       title="Delete snippet"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -386,6 +391,27 @@ export default function CannedResponsesManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Confirm Delete Quick Reply Snippet Dialog */}
+      <ConfirmDeleteDialog
+        isOpen={!!itemToDelete}
+        onOpenChange={(open) => !open && setItemToDelete(null)}
+        title="Delete Quick Reply Snippet?"
+        itemName={itemToDelete ? `/${itemToDelete.shortcut} (${itemToDelete.title})` : undefined}
+        itemType="quick reply"
+        description={
+          itemToDelete ? (
+            <>
+              Are you sure you want to delete the quick reply{' '}
+              <span className="font-semibold text-foreground">"/{itemToDelete.shortcut}"</span> ({itemToDelete.title})?
+              It will no longer appear in the slash-command autocomplete menu.
+            </>
+          ) : undefined
+        }
+        confirmLabel="Yes, Delete"
+        cancelLabel="No, Cancel"
+        onConfirm={confirmDeleteItem}
+      />
     </Card>
   );
 }

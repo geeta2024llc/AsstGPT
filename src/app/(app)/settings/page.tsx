@@ -1,5 +1,7 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import {
   Card,
@@ -11,7 +13,24 @@ import {
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Sun, Moon, Sparkles, ShieldAlert, Sliders, MessageSquareQuote, Webhook, MessageSquare, Users, Clock, Users2, Building2, UserCircle } from 'lucide-react';
+import {
+  Sun,
+  Moon,
+  Sparkles,
+  ShieldAlert,
+  Sliders,
+  MessageSquareQuote,
+  Webhook,
+  MessageSquare,
+  Users,
+  Clock,
+  Users2,
+  Building2,
+  UserCircle,
+  QrCode,
+  Layers,
+  Radio,
+} from 'lucide-react';
 import { useSettings } from '@/hooks/use-settings';
 import WorkspaceSettingsManager from '@/components/workspace-settings-manager';
 import AccountSettingsManager from '@/components/account-settings-manager';
@@ -23,131 +42,171 @@ import TeamRBACManager from '@/components/team-rbac-manager';
 import TeamInviteManager from '@/components/team-invite-manager';
 import ReEngagementManager from '@/components/re-engagement-manager';
 import ContactDedupManager from '@/components/contact-dedup-manager';
+import ChannelsIntegrationCard from '@/components/channels-integration-card';
 
 export default function SettingsPage() {
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get('tab') || 'workspace';
+  const [activeTab, setActiveTab] = useState(initialTab);
+
   const { resolvedTheme, setTheme } = useTheme();
   const { autoLoadKnowledge, setAutoLoadKnowledge } = useSettings();
 
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab) {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-12">
+      {/* Page Header */}
       <div>
-        <h1 className="font-headline text-3xl font-bold">Settings & Integrations</h1>
-        <p className="text-muted-foreground mt-1">
-          Manage system preferences, AI agent behavior, team roles (RBAC), quick replies, live chat widget, outbound webhooks, proactive re-engagement, and automated human handoff rules.
+        <div className="flex items-center gap-2 mb-1">
+          <span className="h-2.5 w-2.5 rounded-full bg-primary animate-pulse" />
+          <h1 className="font-headline text-2xl sm:text-3xl font-bold tracking-tight">
+            Settings & Integrations
+          </h1>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Manage workspace profile, team roles (RBAC), multi-device WhatsApp channel, automated human handoff rules, proactive re-engagement, canned replies, and outbound webhooks.
         </p>
       </div>
 
-      <Tabs defaultValue="workspace" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-10 max-w-6xl">
-          <TabsTrigger value="workspace" className="flex items-center gap-1.5 text-xs">
-            <Building2 className="h-3.5 w-3.5" />
-            <span>Workspace</span>
-          </TabsTrigger>
-          <TabsTrigger value="account" className="flex items-center gap-1.5 text-xs">
-            <UserCircle className="h-3.5 w-3.5" />
-            <span>Account</span>
-          </TabsTrigger>
-          <TabsTrigger value="handoff" className="flex items-center gap-1.5 text-xs">
-            <ShieldAlert className="h-3.5 w-3.5" />
-            <span>Handoff</span>
-          </TabsTrigger>
-          <TabsTrigger value="reengagement" className="flex items-center gap-1.5 text-xs">
-            <Clock className="h-3.5 w-3.5" />
-            <span>Re-engage</span>
-          </TabsTrigger>
-          <TabsTrigger value="dedup" className="flex items-center gap-1.5 text-xs">
-            <Users2 className="h-3.5 w-3.5" />
-            <span>Data Cleanup</span>
-          </TabsTrigger>
-          <TabsTrigger value="team" className="flex items-center gap-1.5 text-xs">
-            <Users className="h-3.5 w-3.5" />
-            <span>Team & RBAC</span>
-          </TabsTrigger>
-          <TabsTrigger value="canned" className="flex items-center gap-1.5 text-xs">
-            <MessageSquareQuote className="h-3.5 w-3.5" />
-            <span>Quick Replies</span>
-          </TabsTrigger>
-          <TabsTrigger value="widget" className="flex items-center gap-1.5 text-xs">
-            <MessageSquare className="h-3.5 w-3.5" />
-            <span>Chat Widget</span>
-          </TabsTrigger>
-          <TabsTrigger value="webhooks" className="flex items-center gap-1.5 text-xs">
-            <Webhook className="h-3.5 w-3.5" />
-            <span>Webhooks</span>
-          </TabsTrigger>
-          <TabsTrigger value="general" className="flex items-center gap-1.5 text-xs">
-            <Sliders className="h-3.5 w-3.5" />
-            <span>Preferences</span>
-          </TabsTrigger>
-        </TabsList>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        {/* Navigation Tabs Bar */}
+        <div className="overflow-x-auto pb-1 no-scrollbar">
+          <TabsList className="flex w-max min-w-full sm:min-w-0 p-1 bg-muted/60 border border-border/60 rounded-xl">
+            <TabsTrigger value="workspace" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+              <Building2 className="h-3.5 w-3.5" />
+              <span>Workspace</span>
+            </TabsTrigger>
 
-        {/* Tab 0: Workspace Profile, Notifications, Plan */}
+            <TabsTrigger value="account" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+              <UserCircle className="h-3.5 w-3.5" />
+              <span>Account</span>
+            </TabsTrigger>
+
+            <TabsTrigger value="channels" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+              <QrCode className="h-3.5 w-3.5 text-emerald-500" />
+              <span>Channels</span>
+            </TabsTrigger>
+
+            <TabsTrigger value="handoff" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+              <ShieldAlert className="h-3.5 w-3.5 text-amber-500" />
+              <span>Handoff</span>
+            </TabsTrigger>
+
+            <TabsTrigger value="reengagement" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+              <Clock className="h-3.5 w-3.5 text-blue-500" />
+              <span>Re-engage</span>
+            </TabsTrigger>
+
+            <TabsTrigger value="dedup" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+              <Users2 className="h-3.5 w-3.5 text-indigo-500" />
+              <span>Data Cleanup</span>
+            </TabsTrigger>
+
+            <TabsTrigger value="team" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+              <Users className="h-3.5 w-3.5" />
+              <span>Team & RBAC</span>
+            </TabsTrigger>
+
+            <TabsTrigger value="canned" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+              <MessageSquareQuote className="h-3.5 w-3.5" />
+              <span>Quick Replies</span>
+            </TabsTrigger>
+
+            <TabsTrigger value="widget" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+              <MessageSquare className="h-3.5 w-3.5" />
+              <span>Chat Widget</span>
+            </TabsTrigger>
+
+            <TabsTrigger value="webhooks" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+              <Webhook className="h-3.5 w-3.5 text-purple-500" />
+              <span>Webhooks</span>
+            </TabsTrigger>
+
+            <TabsTrigger value="general" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+              <Sliders className="h-3.5 w-3.5" />
+              <span>Preferences</span>
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        {/* Tab 1: Workspace Profile, Notifications, Plan */}
         <TabsContent value="workspace" className="space-y-6">
           <WorkspaceSettingsManager />
         </TabsContent>
 
-        {/* Tab 0b: Personal Account, Logout & Delete Account */}
+        {/* Tab 2: Personal Account, Logout & Delete Account */}
         <TabsContent value="account" className="space-y-6">
           <AccountSettingsManager />
         </TabsContent>
 
-        {/* Tab 1: Automated Handoff & Routing Rules */}
+        {/* Tab 3: Multi-Channel Gateways & Live Status */}
+        <TabsContent value="channels" className="space-y-6">
+          <ChannelsIntegrationCard onSwitchTab={setActiveTab} />
+        </TabsContent>
+
+        {/* Tab 4: Automated Handoff & Routing Rules */}
         <TabsContent value="handoff" className="space-y-6">
           <HandoffRulesManager />
         </TabsContent>
 
-        {/* Tab 2: Proactive Customer Re-Engagement */}
+        {/* Tab 5: Proactive Customer Re-Engagement */}
         <TabsContent value="reengagement" className="space-y-6">
           <ReEngagementManager />
         </TabsContent>
 
-        {/* Tab 2b: Duplicate Contact Cleanup */}
+        {/* Tab 6: Duplicate Contact Cleanup */}
         <TabsContent value="dedup" className="space-y-6">
           <ContactDedupManager />
         </TabsContent>
 
-        {/* Tab 2: Team Members & RBAC */}
+        {/* Tab 7: Team Members & RBAC */}
         <TabsContent value="team" className="space-y-6">
           <TeamInviteManager />
           <TeamRBACManager />
         </TabsContent>
 
-        {/* Tab 3: Canned Responses & Quick Replies */}
+        {/* Tab 8: Canned Responses & Quick Replies */}
         <TabsContent value="canned" className="space-y-6">
           <CannedResponsesManager />
         </TabsContent>
 
-        {/* Tab 3: Live Web Chat Widget */}
+        {/* Tab 9: Live Web Chat Widget */}
         <TabsContent value="widget" className="space-y-6">
           <WidgetConfigManager />
         </TabsContent>
 
-        {/* Tab 4: Outbound Webhooks & Integrations */}
+        {/* Tab 10: Outbound Webhooks & Integrations */}
         <TabsContent value="webhooks" className="space-y-6">
           <WebhookManager />
         </TabsContent>
 
-        {/* Tab 5: General & Appearance */}
+        {/* Tab 11: General & Appearance */}
         <TabsContent value="general" className="space-y-6">
-          <Card>
+          <Card className="border-border/70 shadow-sm">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-                <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-                <span className="ml-1">Appearance</span>
+              <CardTitle className="flex items-center gap-2 text-base font-bold">
+                <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0 text-amber-500" />
+                <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100 text-indigo-400" />
+                <span className="ml-1">Theme & Appearance</span>
               </CardTitle>
               <CardDescription>
-                Customize the look and feel of your workspace.
+                Customize the look and feel of your AsstGPT workspace interface.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center justify-between rounded-lg border p-4">
+              <div className="flex items-center justify-between rounded-lg border p-4 bg-muted/20">
                 <div className="space-y-0.5">
-                  <Label htmlFor="theme-mode" className="text-base">
-                    Theme
+                  <Label htmlFor="theme-mode" className="text-sm font-semibold">
+                    Dark Mode
                   </Label>
-                  <p className="text-sm text-muted-foreground">
-                    Select between light and dark themes.
+                  <p className="text-xs text-muted-foreground">
+                    Switch between dark and light themes for optimal visibility.
                   </p>
                 </div>
                 <Switch
@@ -159,24 +218,24 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="border-border/70 shadow-sm">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5" />
-                Agent Settings
+              <CardTitle className="flex items-center gap-2 text-base font-bold">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <span>AI Memory Preferences</span>
               </CardTitle>
               <CardDescription>
-                Configure default behaviors for your AI agents.
+                Configure default retrieval behaviors for your AI agents.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center justify-between rounded-lg border p-4">
+              <div className="flex items-center justify-between rounded-lg border p-4 bg-muted/20">
                 <div className="space-y-0.5">
-                  <Label htmlFor="auto-load-knowledge" className="text-base">
-                    Auto-load AI Memory
+                  <Label htmlFor="auto-load-knowledge" className="text-sm font-semibold">
+                    Auto-load AI Memory Sources
                   </Label>
-                  <p className="text-sm text-muted-foreground">
-                    Automatically select all documents as context when creating a new agent rule.
+                  <p className="text-xs text-muted-foreground">
+                    Automatically index all knowledge documents as grounding context for conversational generation.
                   </p>
                 </div>
                 <Switch

@@ -232,6 +232,8 @@ export interface Conversation {
   sentiment?: SentimentType;
   firstResponseTimeMs?: number;
   resolutionDurationMs?: number;
+  /** Favorite / Starred status */
+  isStarred?: boolean;
 }
 
 export interface TakeoverCatchUpSummary {
