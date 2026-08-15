@@ -16,6 +16,8 @@ import { runPhase7TestSuite as runRbacTestSuite } from './suites/phase7_rbac.tes
 import { runPhase7TestSuite as runProductionHardeningTestSuite } from './suites/phase7_production.test';
 import { runMultiTenantRBACTestSuite } from './suites/multitenant_rbac.test';
 import { runAIFailureAndTakeoverRaceTestSuite } from './suites/ai_failure_and_takeover_races.test';
+import { runAdversarialSecurityAudit } from './suites/adversarial_multitenant_security.test';
+import { runRailwayAndMultiReplicaTestSuite } from './suites/railway_multi_replica_resilience.test';
 
 interface SuiteResult {
   name: string;
@@ -46,6 +48,8 @@ async function runMasterTestSuite() {
     { name: 'Production Hardening & Idempotency', runner: runProductionHardeningTestSuite },
     { name: 'Multi-Tenant Isolation & Security', runner: runMultiTenantRBACTestSuite },
     { name: 'AI Failure Resilience & Takeover Races', runner: runAIFailureAndTakeoverRaceTestSuite },
+    { name: 'Adversarial Multi-Tenant Security Audit', runner: runAdversarialSecurityAudit },
+    { name: 'Railway Persistence & Multi-Replica Failover', runner: runRailwayAndMultiReplicaTestSuite },
   ];
 
   const results: SuiteResult[] = [];

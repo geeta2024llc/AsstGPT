@@ -3,6 +3,7 @@ if (typeof window !== 'undefined') {
 }
 
 import { getSupabaseAdmin } from './supabase';
+import { getRequestContext } from './request-context';
 import type { Conversation, Message, Agent, Stats, KnowledgeFile, LogEntry, TeamMember, HandoffRule, CannedResponse, ConversationNote, ContactProfile, LeadStage, WebhookConfig, WebhookEventType, WebhookPayload, SLAMetrics, SentimentType, WidgetConfig } from '@/types';
 
 function getDefaultTenantId(): string {
@@ -14,19 +15,23 @@ function getDefaultTenantId(): string {
 }
 
 /**
- * Ensures that a default workspace tenant and WhatsApp channel exist in Supabase.
- * Returns the tenantId and channelId for tenant isolation.
+ * Ensures that a tenant and WhatsApp channel exist in Supabase.
+ * Returns the tenantId and channelId scoped to the active RequestContext.
  */
-let cachedTenantAndChannel: { tenantId: string; channelId: string } | null = null;
+const tenantChannelCache = new Map<string, string>();
 
-async function ensureDefaultTenantAndChannel(): Promise<{ tenantId: string; channelId: string }> {
-  if (cachedTenantAndChannel) {
-    return cachedTenantAndChannel;
+async function ensureDefaultTenantAndChannel(explicitTenantId?: string): Promise<{ tenantId: string; channelId: string }> {
+  const ctx = getRequestContext();
+  const tenantId = explicitTenantId || ctx?.tenantId || getDefaultTenantId();
+
+  const cachedChannelId = tenantChannelCache.get(tenantId);
+  if (cachedChannelId) {
+    return { tenantId, channelId: cachedChannelId };
   }
-  const supabase = getSupabaseAdmin();
-  const tenantId = getDefaultTenantId();
 
-  // 1. Ensure default tenant exists
+  const supabase = getSupabaseAdmin();
+
+  // 1. Ensure tenant exists
   const { data: existingTenant } = await supabase
     .from('tenants')
     .select('id')
@@ -36,15 +41,15 @@ async function ensureDefaultTenantAndChannel(): Promise<{ tenantId: string; chan
   if (!existingTenant) {
     const { error: insertTenantError } = await supabase.from('tenants').insert({
       id: tenantId,
-      name: 'Default Workspace',
-      slug: 'default-workspace',
+      name: `Workspace ${tenantId.slice(0, 8)}`,
+      slug: `workspace-${tenantId.slice(0, 8)}`,
     });
     if (insertTenantError) {
-      console.error('Failed to create default tenant in Supabase:', insertTenantError);
+      console.error('Failed to create tenant in Supabase:', insertTenantError);
     }
   }
 
-  // 2. Ensure default WhatsApp channel exists (order by created_at asc and limit 1 for single deterministic channel)
+  // 2. Ensure WhatsApp channel exists for this tenant
   const { data: existingChannel } = await supabase
     .from('channels')
     .select('id')
@@ -55,8 +60,8 @@ async function ensureDefaultTenantAndChannel(): Promise<{ tenantId: string; chan
     .maybeSingle();
 
   if (existingChannel) {
-    cachedTenantAndChannel = { tenantId, channelId: existingChannel.id };
-    return cachedTenantAndChannel;
+    tenantChannelCache.set(tenantId, existingChannel.id);
+    return { tenantId, channelId: existingChannel.id };
   }
 
   const { data: newChannel, error: channelError } = await supabase
@@ -71,12 +76,12 @@ async function ensureDefaultTenantAndChannel(): Promise<{ tenantId: string; chan
     .single();
 
   if (channelError || !newChannel) {
-    console.error('Failed to create default WhatsApp channel:', channelError);
-    throw new Error('Default channel initialization failed');
+    console.error('Failed to create WhatsApp channel for tenant:', channelError);
+    throw new Error(`Channel initialization failed for tenant ${tenantId}`);
   }
 
-  cachedTenantAndChannel = { tenantId, channelId: newChannel.id };
-  return cachedTenantAndChannel;
+  tenantChannelCache.set(tenantId, newChannel.id);
+  return { tenantId, channelId: newChannel.id };
 }
 
 import { formatContactName } from './format-utils';
