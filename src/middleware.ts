@@ -6,8 +6,10 @@ import { timingSafeCompare } from '@/lib/security-utils';
 const PUBLIC_PATHS = [
   '/login',
   '/signup',
+  '/invite',
   '/api/health',
   '/api/auth',
+  '/api/invite',
   '/api/widget',
   '/_next',
   '/favicon.ico',
@@ -46,7 +48,9 @@ export async function middleware(request: NextRequest) {
   let resolvedTenantId = defaultTenantId;
   let resolvedUserId = '00000000-0000-0000-0000-000000000001';
   let resolvedUserRole = 'admin';
+  let resolvedUserEmail = '';
   let isAuthenticated = false;
+  let checkTenantSuspension = false;
 
   // 2. Cryptographic Token Verification
   if (token) {
@@ -71,6 +75,7 @@ export async function middleware(request: NextRequest) {
           if (user?.id) {
             isAuthenticated = true;
             resolvedUserId = user.id;
+            resolvedUserEmail = user.email || '';
             resolvedTenantId =
               user.app_metadata?.tenant_id ||
               user.user_metadata?.tenant_id ||
@@ -79,6 +84,7 @@ export async function middleware(request: NextRequest) {
               user.app_metadata?.role ||
               user.user_metadata?.role ||
               'operator';
+            checkTenantSuspension = true;
           }
         }
       } catch (_) {
@@ -100,11 +106,50 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // 3b. Reject requests from members of a super-admin-suspended tenant.
+  // Fail-closed on any error, consistent with the auth check above.
+  if (!authDisabled && checkTenantSuspension && supabaseUrl && supabaseAnonKey) {
+    try {
+      const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/check_tenant_active`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${supabaseAnonKey}`,
+        },
+        body: JSON.stringify({ p_tenant_id: resolvedTenantId }),
+        signal: AbortSignal.timeout(3500),
+      });
+
+      const tenantActive = rpcRes.ok && (await rpcRes.json()) === true;
+      if (!tenantActive) {
+        if (pathname.startsWith('/api/')) {
+          return NextResponse.json(
+            { error: 'Forbidden: this workspace has been suspended.' },
+            { status: 403 }
+          );
+        }
+        const suspendedUrl = new URL('/login', request.url);
+        suspendedUrl.searchParams.set('suspended', '1');
+        return NextResponse.redirect(suspendedUrl);
+      }
+    } catch (_) {
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json(
+          { error: 'Forbidden: unable to verify workspace status.' },
+          { status: 403 }
+        );
+      }
+      return NextResponse.redirect(new URL('/login', request.url));
+    }
+  }
+
   // 4. Forward verified claims downstream to API route handlers and Server Components
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-tenant-id', resolvedTenantId);
   requestHeaders.set('x-user-id', resolvedUserId);
   requestHeaders.set('x-user-role', resolvedUserRole);
+  requestHeaders.set('x-user-email', resolvedUserEmail);
   if (token && isAuthenticated) {
     requestHeaders.set('authorization', `Bearer ${token}`);
   }

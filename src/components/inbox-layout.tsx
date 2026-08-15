@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -45,11 +46,14 @@ import {
   Trash2,
   Radio,
   UserCog,
+  Copy,
+  Phone,
+  Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { formatContactName, formatChatSubtitle, getAvatarInitials } from '@/lib/format-utils';
+import { formatContactName, formatChatSubtitle, getAvatarInitials, getContactIdentifier, formatPhoneNumber } from '@/lib/format-utils';
 import ContactProfileDrawer from '@/components/contact-profile-drawer';
 import { Conversation, Message, TeamMember, CannedResponse, ConversationNote, isConversationPaused } from '@/types';
 import { format } from 'date-fns';
@@ -108,11 +112,28 @@ export default function InboxLayout() {
   const { toast } = useToast();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const chatParam = searchParams.get('chat');
+    if (chatParam) {
+      setSelectedConversationId(decodeURIComponent(chatParam));
+    }
+  }, [searchParams]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState<'open' | 'my_chats' | 'unassigned' | 'unread' | 'bot_active' | 'human_takeover' | 'resolved' | 'all'>('open');
+  const [isCopiedPhone, setIsCopiedPhone] = useState(false);
 
   const selectedConversation = conversations.find(c => c.id === selectedConversationId);
+
+  const handleCopyPhone = (phone: string) => {
+    if (!phone) return;
+    navigator.clipboard.writeText(phone);
+    setIsCopiedPhone(true);
+    toast({ title: 'Phone Number Copied 📋', description: phone });
+    setTimeout(() => setIsCopiedPhone(false), 2000);
+  };
 
   // Slash command autocomplete popup logic (only in message mode)
   const isSlashActive = composerMode === 'message' && newMessage.startsWith('/');
@@ -126,10 +147,16 @@ export default function InboxLayout() {
     : [];
 
   const filteredConversations = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
     return conversations.filter(c => {
+      const ident = getContactIdentifier(c.name, c.id, c.company);
       const matchesSearch =
-        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.id.toLowerCase().includes(searchQuery.toLowerCase());
+        !q ||
+        ident.displayName.toLowerCase().includes(q) ||
+        ident.phoneNumber.toLowerCase().includes(q) ||
+        c.id.toLowerCase().includes(q) ||
+        (c.lastMessage?.text && c.lastMessage.text.toLowerCase().includes(q)) ||
+        (c.company && c.company.toLowerCase().includes(q));
 
       const isResolved = c.status === 'resolved';
 
@@ -698,20 +725,23 @@ export default function InboxLayout() {
               const isPaused = isConversationPaused(convo);
               const isResolved = convo.status === 'resolved';
               const member = teamMembers.find(m => m.id === convo.assignedUserId);
-              const displayName = formatContactName(convo.name, convo.id);
-              const avatarInitials = getAvatarInitials(convo.name, convo.id);
+              const ident = getContactIdentifier(convo.name, convo.id, convo.company);
+              const displayName = ident.displayName;
+              const phoneNumber = ident.phoneNumber;
+              const hasCustomName = ident.hasCustomName;
+              const avatarInitials = ident.avatarInitials;
 
               return (
                 <div
                   key={`${convo.id}_${idx}`}
                   onClick={() => handleSelectConversation(convo)}
                   className={cn(
-                    'flex cursor-pointer items-center gap-3 p-3 transition-colors hover:bg-muted/50 border-b border-border/40',
+                    'flex cursor-pointer items-start gap-3 p-3 transition-colors hover:bg-muted/50 border-b border-border/40',
                     selectedConversationId === convo.id && 'bg-muted/80',
                     isResolved && 'opacity-70 bg-muted/20'
                   )}
                 >
-                  <div className="relative">
+                  <div className="relative shrink-0 mt-0.5">
                     <Avatar className="h-10 w-10 border bg-muted/40 shrink-0">
                       <AvatarImage src={convo.avatar} alt={displayName} />
                       <AvatarFallback className="font-semibold text-xs text-primary bg-primary/10">
@@ -741,11 +771,19 @@ export default function InboxLayout() {
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
-                      <p className="font-semibold text-sm truncate">{displayName}</p>
-                      <span className="text-[11px] text-muted-foreground whitespace-nowrap ml-2">
+                      <p className="font-semibold text-sm truncate text-foreground">{displayName}</p>
+                      <span className="text-[11px] text-muted-foreground whitespace-nowrap ml-2 shrink-0">
                         {formatTimestamp(convo.lastMessage.timestamp)}
                       </span>
                     </div>
+
+                    {/* Prominent phone number display if the user has a custom name */}
+                    {hasCustomName && phoneNumber && (
+                      <p className="text-[11px] text-primary/90 font-mono mb-1 truncate flex items-center gap-1 font-medium">
+                        <Phone className="w-3 h-3 text-primary/70 shrink-0" />
+                        <span>{phoneNumber}</span>
+                      </p>
+                    )}
 
                     <p className="truncate text-xs text-muted-foreground mb-1.5">
                       {convo.lastMessage.text || 'No messages yet'}
@@ -769,8 +807,14 @@ export default function InboxLayout() {
                         </span>
                       )}
 
+                      {convo.stage && (
+                        <span className="text-[9px] px-1.5 py-0 rounded border capitalize bg-muted text-muted-foreground font-medium">
+                          {convo.stage === 'vip' ? '★ VIP' : convo.stage}
+                        </span>
+                      )}
+
                       {member && !isResolved && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground border truncate max-w-[110px]">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground border truncate max-w-[100px]">
                           {member.fullName.split(' ')[0]}
                         </span>
                       )}
@@ -812,54 +856,84 @@ export default function InboxLayout() {
                     <span className="sr-only">Back</span>
                   </Button>
 
-                  <Avatar className="h-9 w-9 shrink-0 border bg-muted/40">
-                    <AvatarImage src={selectedConversation.avatar} alt={formatContactName(selectedConversation.name, selectedConversation.id)} />
-                    <AvatarFallback className="font-semibold text-xs text-primary bg-primary/10">
-                      {getAvatarInitials(selectedConversation.name, selectedConversation.id)}
-                    </AvatarFallback>
-                  </Avatar>
+                  {(() => {
+                    const ident = getContactIdentifier(selectedConversation.name, selectedConversation.id, selectedConversation.company);
+                    return (
+                      <>
+                        <Avatar className="h-9 w-9 shrink-0 border bg-muted/40">
+                          <AvatarImage src={selectedConversation.avatar} alt={ident.displayName} />
+                          <AvatarFallback className="font-semibold text-xs text-primary bg-primary/10">
+                            {ident.avatarInitials}
+                          </AvatarFallback>
+                        </Avatar>
 
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <h3 className="font-headline font-semibold text-sm truncate">
-                        {formatContactName(selectedConversation.name, selectedConversation.id)}
-                      </h3>
-                      {selectedConversation.stage && (
-                        <span className={cn('text-[10px] px-1.5 py-0 rounded border capitalize font-medium', {
-                          'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20': selectedConversation.stage === 'lead',
-                          'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20': selectedConversation.stage === 'prospect',
-                          'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20': selectedConversation.stage === 'customer',
-                          'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 font-semibold': selectedConversation.stage === 'vip',
-                          'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20': selectedConversation.stage === 'churned',
-                        })}>
-                          {selectedConversation.stage === 'vip' ? '★ VIP' : selectedConversation.stage}
-                        </span>
-                      )}
-                      {selectedConversation.sentiment && selectedConversation.sentiment !== 'neutral' && (
-                        <span
-                          className={cn(
-                            'text-[10px] px-1.5 py-0 rounded border font-medium inline-flex items-center gap-1',
-                            selectedConversation.sentiment === 'positive' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
-                            selectedConversation.sentiment === 'negative' && 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
-                            selectedConversation.sentiment === 'frustrated' && 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30 animate-pulse font-bold'
-                          )}
-                          title={`Customer Sentiment: ${selectedConversation.sentiment}`}
-                        >
-                          {selectedConversation.sentiment === 'positive' && '😊 Positive'}
-                          {selectedConversation.sentiment === 'negative' && '😟 Negative'}
-                          {selectedConversation.sentiment === 'frustrated' && '😠 Frustrated'}
-                        </span>
-                      )}
-                      {isSelectedConvoResolved && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-slate-500/10 text-slate-600 dark:text-slate-400">
-                          Resolved
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground truncate">
-                      <span>{formatChatSubtitle(selectedConversation.id, selectedConversation.company)}</span>
-                    </div>
-                  </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h3 className="font-headline font-semibold text-sm truncate">
+                              {ident.displayName}
+                            </h3>
+                            {selectedConversation.stage && (
+                              <span className={cn('text-[10px] px-1.5 py-0 rounded border capitalize font-medium', {
+                                'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20': selectedConversation.stage === 'lead',
+                                'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20': selectedConversation.stage === 'prospect',
+                                'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20': selectedConversation.stage === 'customer',
+                                'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 font-semibold': selectedConversation.stage === 'vip',
+                                'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20': selectedConversation.stage === 'churned',
+                              })}>
+                                {selectedConversation.stage === 'vip' ? '★ VIP' : selectedConversation.stage}
+                              </span>
+                            )}
+                            {selectedConversation.sentiment && selectedConversation.sentiment !== 'neutral' && (
+                              <span
+                                className={cn(
+                                  'text-[10px] px-1.5 py-0 rounded border font-medium inline-flex items-center gap-1',
+                                  selectedConversation.sentiment === 'positive' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+                                  selectedConversation.sentiment === 'negative' && 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+                                  selectedConversation.sentiment === 'frustrated' && 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30 animate-pulse font-bold'
+                                )}
+                                title={`Customer Sentiment: ${selectedConversation.sentiment}`}
+                              >
+                                {selectedConversation.sentiment === 'positive' && '😊 Positive'}
+                                {selectedConversation.sentiment === 'negative' && '😟 Negative'}
+                                {selectedConversation.sentiment === 'frustrated' && '😠 Frustrated'}
+                              </span>
+                            )}
+                            {isSelectedConvoResolved && (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-slate-500/10 text-slate-600 dark:text-slate-400">
+                                Resolved
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground truncate">
+                            <span className="font-mono flex items-center gap-1">
+                              <span>WhatsApp</span>
+                              <span>•</span>
+                              <span className="text-foreground font-medium">{ident.phoneNumber}</span>
+                            </span>
+                            {selectedConversation.company && (
+                              <span>• {selectedConversation.company}</span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleCopyPhone(ident.phoneNumber)}
+                              className="text-[10px] text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-border/50 bg-muted/40 cursor-pointer"
+                              title="Copy phone number"
+                            >
+                              {isCopiedPhone ? (
+                                <>
+                                  <Check className="w-2.5 h-2.5 text-emerald-400" /> Copied
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-2.5 h-2.5" /> Copy
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 {/* Header Action Controls */}

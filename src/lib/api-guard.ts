@@ -3,7 +3,7 @@ import { runWithRequestContext, RequestContext } from './request-context';
 import type { UserRole } from '@/types';
 
 export interface ApiAuthOptions {
-  roles?: Array<UserRole | 'admin' | 'operator' | 'viewer'>;
+  roles?: UserRole[];
   allowPublic?: boolean;
 }
 

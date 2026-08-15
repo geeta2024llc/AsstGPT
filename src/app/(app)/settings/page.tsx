@@ -11,13 +11,15 @@ import {
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Sun, Moon, Sparkles, ShieldAlert, Sliders, MessageSquareQuote, Webhook, MessageSquare, Users, Clock, Users2 } from 'lucide-react';
+import { Sun, Moon, Sparkles, ShieldAlert, Sliders, MessageSquareQuote, Webhook, MessageSquare, Users, Clock, Users2, Building2 } from 'lucide-react';
 import { useSettings } from '@/hooks/use-settings';
+import WorkspaceSettingsManager from '@/components/workspace-settings-manager';
 import HandoffRulesManager from '@/components/handoff-rules-manager';
 import CannedResponsesManager from '@/components/canned-responses-manager';
 import WebhookManager from '@/components/webhook-manager';
 import WidgetConfigManager from '@/components/widget-config-manager';
 import TeamRBACManager from '@/components/team-rbac-manager';
+import TeamInviteManager from '@/components/team-invite-manager';
 import ReEngagementManager from '@/components/re-engagement-manager';
 import ContactDedupManager from '@/components/contact-dedup-manager';
 
@@ -34,8 +36,12 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="handoff" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-8 max-w-5xl">
+      <Tabs defaultValue="workspace" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-9 max-w-6xl">
+          <TabsTrigger value="workspace" className="flex items-center gap-1.5 text-xs">
+            <Building2 className="h-3.5 w-3.5" />
+            <span>Workspace</span>
+          </TabsTrigger>
           <TabsTrigger value="handoff" className="flex items-center gap-1.5 text-xs">
             <ShieldAlert className="h-3.5 w-3.5" />
             <span>Handoff</span>
@@ -70,6 +76,11 @@ export default function SettingsPage() {
           </TabsTrigger>
         </TabsList>
 
+        {/* Tab 0: Workspace Profile, Notifications, Plan */}
+        <TabsContent value="workspace" className="space-y-6">
+          <WorkspaceSettingsManager />
+        </TabsContent>
+
         {/* Tab 1: Automated Handoff & Routing Rules */}
         <TabsContent value="handoff" className="space-y-6">
           <HandoffRulesManager />
@@ -87,6 +98,7 @@ export default function SettingsPage() {
 
         {/* Tab 2: Team Members & RBAC */}
         <TabsContent value="team" className="space-y-6">
+          <TeamInviteManager />
           <TeamRBACManager />
         </TabsContent>
 
@@ -151,7 +163,7 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between rounded-lg border p-4">
                 <div className="space-y-0.5">
                   <Label htmlFor="auto-load-knowledge" className="text-base">
-                    Auto-load Knowledge Base
+                    Auto-load AI Memory
                   </Label>
                   <p className="text-sm text-muted-foreground">
                     Automatically select all documents as context when creating a new agent rule.

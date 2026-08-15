@@ -4,9 +4,7 @@ import { useState, useEffect } from 'react';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
-  CardTitle,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,13 +28,11 @@ import {
 } from '@/components/ui/dialog';
 import {
   Users,
-  UserPlus,
   Shield,
   Trash2,
   Edit2,
   Check,
   Loader2,
-  Mail,
   Layers,
   Crown,
   UserCheck,
@@ -54,16 +50,11 @@ const ROLE_CONFIG: Record<UserRole, { label: string; badgeClass: string; icon: a
   admin: {
     label: 'Admin (Full Access)',
     badgeClass: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20 font-semibold',
-    icon: Crown,
+    icon: Shield,
   },
-  agent: {
-    label: 'Agent (Inbox & CRM)',
+  operator: {
+    label: 'Operator (Inbox & CRM)',
     badgeClass: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20 font-medium',
-    icon: UserCheck,
-  },
-  member: {
-    label: 'Member (Standard)',
-    badgeClass: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20 font-medium',
     icon: UserCheck,
   },
   viewer: {
@@ -89,10 +80,7 @@ export default function TeamRBACManager() {
   const { toast } = useToast();
 
   const [formData, setFormData] = useState({
-    fullName: '',
-    email: '',
-    avatarUrl: '',
-    role: 'agent' as UserRole,
+    role: 'operator' as UserRole,
     status: 'online' as UserStatus,
     assignedQueues: 'general, support',
   });
@@ -114,25 +102,9 @@ export default function TeamRBACManager() {
     fetchMembers();
   }, []);
 
-  const handleOpenCreate = () => {
-    setEditingMember(null);
-    setFormData({
-      fullName: '',
-      email: '',
-      avatarUrl: '',
-      role: 'agent',
-      status: 'online',
-      assignedQueues: 'general, support',
-    });
-    setIsDialogOpen(true);
-  };
-
   const handleOpenEdit = (m: TeamMember) => {
     setEditingMember(m);
     setFormData({
-      fullName: m.fullName,
-      email: m.email || '',
-      avatarUrl: m.avatarUrl || '',
       role: m.role,
       status: m.status || 'online',
       assignedQueues: (m.assignedQueues || []).join(', '),
@@ -141,28 +113,19 @@ export default function TeamRBACManager() {
   };
 
   const handleSave = async () => {
-    if (!formData.fullName.trim()) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Full name is required' });
-      return;
-    }
+    if (!editingMember) return;
 
     setIsSaving(true);
     try {
-      const url = editingMember ? `/api/team/${editingMember.id}` : '/api/team';
-      const method = editingMember ? 'PUT' : 'POST';
-
       const queues = formData.assignedQueues
         .split(',')
         .map(q => q.trim())
         .filter(Boolean);
 
-      const res = await fetch(url, {
-        method,
+      const res = await fetch(`/api/team/${editingMember.id}`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          fullName: formData.fullName.trim(),
-          email: formData.email.trim() || undefined,
-          avatarUrl: formData.avatarUrl.trim() || undefined,
           role: formData.role,
           status: formData.status,
           assignedQueues: queues,
@@ -175,8 +138,8 @@ export default function TeamRBACManager() {
       }
 
       toast({
-        title: editingMember ? 'Member Updated' : 'Member Added',
-        description: `Team member ${formData.fullName} saved.`,
+        title: 'Member Updated',
+        description: `${editingMember.fullName}'s access was updated.`,
       });
 
       setIsDialogOpen(false);
@@ -189,11 +152,14 @@ export default function TeamRBACManager() {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Remove "${name}" from the team?`)) return;
+    if (!confirm(`Remove "${name}" from this workspace? They will immediately lose access.`)) return;
 
     try {
       const res = await fetch(`/api/team/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete member');
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.message || 'Failed to remove member');
+      }
       setMembers(prev => prev.filter(m => m.id !== id));
       toast({ title: 'Member Removed' });
     } catch (err) {
@@ -204,20 +170,15 @@ export default function TeamRBACManager() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold font-headline flex items-center gap-2">
-            <Users className="h-5 w-5 text-primary" />
-            <span>Team Members & Roles (RBAC)</span>
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Manage agents, supervisors, queue assignments, and role-based permissions across your organization.
-          </p>
-        </div>
-        <Button onClick={handleOpenCreate} className="gap-1.5 self-start sm:self-auto">
-          <UserPlus className="h-4 w-4" />
-          <span>Add Team Member</span>
-        </Button>
+      <div>
+        <h2 className="text-xl font-bold font-headline flex items-center gap-2">
+          <Users className="h-5 w-5 text-primary" />
+          <span>Workspace Members</span>
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Everyone with real login access to this workspace, and their role, availability, and queue assignments.
+          New members join via an invitation above.
+        </p>
       </div>
 
       {/* Member Cards List */}
@@ -225,12 +186,15 @@ export default function TeamRBACManager() {
         <div className="flex items-center justify-center p-12">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
+      ) : members.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-6">No workspace members yet.</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {members.map((m) => {
-            const roleCfg = ROLE_CONFIG[m.role] || ROLE_CONFIG.agent;
+            const roleCfg = ROLE_CONFIG[m.role] || ROLE_CONFIG.operator;
             const statusCfg = STATUS_CONFIG[m.status || 'online'] || STATUS_CONFIG.online;
             const Icon = roleCfg.icon;
+            const isOwner = m.role === 'owner';
 
             return (
               <Card key={m.id} className="transition-all hover:shadow-sm">
@@ -249,7 +213,7 @@ export default function TeamRBACManager() {
                       </div>
                       <div className="min-w-0">
                         <h4 className="font-semibold text-sm truncate">{m.fullName}</h4>
-                        <p className="text-xs text-muted-foreground truncate">{m.email || 'No email specified'}</p>
+                        <p className="text-xs text-muted-foreground truncate">{m.email || 'No email on file'}</p>
                       </div>
                     </div>
 
@@ -258,7 +222,9 @@ export default function TeamRBACManager() {
                         variant="ghost"
                         size="icon"
                         onClick={() => handleOpenEdit(m)}
+                        disabled={isOwner}
                         className="h-7 w-7"
+                        title={isOwner ? "The workspace owner's role can't be changed here" : 'Edit member'}
                       >
                         <Edit2 className="h-3 w-3" />
                       </Button>
@@ -266,7 +232,9 @@ export default function TeamRBACManager() {
                         variant="ghost"
                         size="icon"
                         onClick={() => handleDelete(m.id, m.fullName)}
+                        disabled={isOwner}
                         className="h-7 w-7 text-destructive hover:text-destructive"
+                        title={isOwner ? 'The workspace owner cannot be removed' : 'Remove member'}
                       >
                         <Trash2 className="h-3 w-3" />
                       </Button>
@@ -308,48 +276,17 @@ export default function TeamRBACManager() {
         </div>
       )}
 
-      {/* Add / Edit Dialog */}
+      {/* Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{editingMember ? 'Edit Team Member' : 'Add Team Member'}</DialogTitle>
+            <DialogTitle>Edit {editingMember?.fullName}</DialogTitle>
             <DialogDescription>
               Set role permissions, availability status, and queue responsibilities.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="member-name">Full Name</Label>
-              <Input
-                id="member-name"
-                value={formData.fullName}
-                onChange={(e) => setFormData(p => ({ ...p, fullName: e.target.value }))}
-                placeholder="e.g. Sarah Jenkins"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="member-email">Email Address</Label>
-              <Input
-                id="member-email"
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData(p => ({ ...p, email: e.target.value }))}
-                placeholder="sarah@company.com"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="member-avatar">Avatar Image URL (Optional)</Label>
-              <Input
-                id="member-avatar"
-                value={formData.avatarUrl}
-                onChange={(e) => setFormData(p => ({ ...p, avatarUrl: e.target.value }))}
-                placeholder="https://..."
-              />
-            </div>
-
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="member-role">Access Role</Label>
@@ -362,7 +299,7 @@ export default function TeamRBACManager() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="admin">Admin (Full Access)</SelectItem>
-                    <SelectItem value="agent">Agent (Inbox & CRM)</SelectItem>
+                    <SelectItem value="operator">Operator (Inbox & CRM)</SelectItem>
                     <SelectItem value="viewer">Viewer (Read-Only)</SelectItem>
                   </SelectContent>
                 </Select>
@@ -403,7 +340,7 @@ export default function TeamRBACManager() {
             </Button>
             <Button onClick={handleSave} disabled={isSaving} className="gap-1.5">
               {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              <span>{editingMember ? 'Update Member' : 'Add Member'}</span>
+              <span>Save Changes</span>
             </Button>
           </DialogFooter>
         </DialogContent>

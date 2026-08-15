@@ -219,7 +219,10 @@ BEGIN
             updated_at
         ) VALUES (
             p_tenant_id,
-            COALESCE(p_sender_name, v_phone),
+            CASE 
+                WHEN p_from_me OR p_sender_name ILIKE 'AI Follow-Up%' OR p_sender_name ILIKE 'Me%' OR p_sender_name ILIKE 'System%' THEN v_phone
+                ELSE COALESCE(NULLIF(TRIM(p_sender_name), ''), v_phone)
+            END,
             v_phone,
             jsonb_build_object('source', 'whatsapp', 'initial_chat_id', p_chat_id),
             p_timestamp,
@@ -227,8 +230,12 @@ BEGIN
         )
         RETURNING id, name INTO v_contact_id, v_canonical_name;
     ELSE
-        IF (v_canonical_name IS NULL OR v_canonical_name = v_phone OR v_canonical_name ~ '^[0-9+ ]+$') 
-           AND p_sender_name IS NOT NULL AND p_sender_name != '' AND p_sender_name != v_phone THEN
+        IF NOT p_from_me 
+           AND p_sender_name IS NOT NULL 
+           AND p_sender_name != '' 
+           AND p_sender_name != v_phone 
+           AND NOT (p_sender_name ILIKE 'AI Follow-Up%' OR p_sender_name ILIKE 'Me%' OR p_sender_name ILIKE 'System%')
+           AND (v_canonical_name IS NULL OR v_canonical_name = v_phone OR v_canonical_name ~ '^[0-9+ ]+$' OR v_canonical_name ILIKE 'AI Follow-Up%' OR v_canonical_name ILIKE 'Client Pro Inquiries%') THEN
             UPDATE public.contacts
             SET name = p_sender_name,
                 updated_at = p_timestamp
@@ -396,3 +403,13 @@ BEGIN
     );
 END;
 $$;
+
+-- 10. Clean up legacy synthetic or corrupted contact names from previous runs
+UPDATE public.contacts
+SET name = COALESCE(NULLIF(phone, ''), 'WhatsApp Contact')
+WHERE name ILIKE 'AI Follow-Up%' 
+   OR name ILIKE 'Client Pro Inquiries%'
+   OR name ILIKE 'test_%'
+   OR name ILIKE 'Me'
+   OR name ILIKE 'System';
+

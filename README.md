@@ -20,7 +20,7 @@
 - ✅ **AI-Powered Responses** - Gemini AI integration for natural conversations
 - ✅ **WhatsApp Integration** - Seamless connection via Baileys library
 - ✅ **Agent Management** - Create and configure multiple AI personalities
-- ✅ **Knowledge Base** - Upload documents for context-specific responses
+- ✅ **AI Memory** - Upload documents for context-specific responses
 - ✅ **QR Code Authentication** - Secure WhatsApp Web login
 
 ### Dashboard & Analytics

@@ -4,7 +4,9 @@ if (typeof window !== 'undefined') {
 
 import { getSupabaseAdmin } from './supabase';
 import { getRequestContext } from './request-context';
-import type { Conversation, Message, Agent, Stats, KnowledgeFile, LogEntry, TeamMember, HandoffRule, CannedResponse, ConversationNote, ContactProfile, LeadStage, WebhookConfig, WebhookEventType, WebhookPayload, SLAMetrics, SentimentType, WidgetConfig, ReEngagementConfig } from '@/types';
+import type { Conversation, Message, Agent, Stats, KnowledgeFile, LogEntry, TeamMember, HandoffRule, CannedResponse, ConversationNote, ContactProfile, ClientDetailItem, LeadStage, WebhookConfig, WebhookEventType, WebhookPayload, SLAMetrics, SentimentType, WidgetConfig, ReEngagementConfig, TenantInvitation, InvitationRole, UserRole, UserStatus, TenantProfile, TenantNotificationSettings } from '@/types';
+import crypto from 'crypto';
+import { formatContactName, isSyntheticOrGenericName, formatPhoneNumber, getAvatarInitials } from './format-utils';
 
 function getDefaultTenantId(): string {
   const tenantId = process.env.DEFAULT_TENANT_ID;
@@ -84,7 +86,69 @@ export async function ensureDefaultTenantAndChannel(explicitTenantId?: string): 
   return { tenantId, channelId: newChannel.id };
 }
 
-import { formatContactName } from './format-utils';
+// --- Workspace / Tenant Profile ---
+
+function tenantRowToProfile(row: any): TenantProfile {
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    logoUrl: row.logo_url || undefined,
+    timezone: row.timezone || 'UTC',
+    businessDescription: row.business_description || undefined,
+    supportEmail: row.support_email || undefined,
+    notificationSettings: (row.notification_settings as TenantNotificationSettings) || {},
+    plan: row.plan || 'free',
+    isActive: row.is_active !== false,
+    suspendedReason: row.suspended_reason || undefined,
+    createdAt: row.created_at,
+  };
+}
+
+export async function getTenantProfile(): Promise<TenantProfile> {
+  const supabase = getSupabaseAdmin();
+  const { tenantId } = await ensureDefaultTenantAndChannel();
+
+  const { data, error } = await supabase.from('tenants').select('*').eq('id', tenantId).single();
+  if (error || !data) {
+    console.error('Failed to fetch tenant profile:', error);
+    throw error || new Error('Workspace not found');
+  }
+  return tenantRowToProfile(data);
+}
+
+export async function updateTenantProfile(update: {
+  name?: string;
+  logoUrl?: string | null;
+  timezone?: string;
+  businessDescription?: string | null;
+  supportEmail?: string | null;
+  notificationSettings?: TenantNotificationSettings;
+}): Promise<TenantProfile> {
+  const supabase = getSupabaseAdmin();
+  const { tenantId } = await ensureDefaultTenantAndChannel();
+
+  const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (update.name !== undefined) payload.name = update.name;
+  if (update.logoUrl !== undefined) payload.logo_url = update.logoUrl;
+  if (update.timezone !== undefined) payload.timezone = update.timezone;
+  if (update.businessDescription !== undefined) payload.business_description = update.businessDescription;
+  if (update.supportEmail !== undefined) payload.support_email = update.supportEmail;
+  if (update.notificationSettings !== undefined) payload.notification_settings = update.notificationSettings;
+
+  const { data, error } = await supabase
+    .from('tenants')
+    .update(payload)
+    .eq('id', tenantId)
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    console.error('Failed to update tenant profile:', error);
+    throw error || new Error('Failed to update workspace');
+  }
+  return tenantRowToProfile(data);
+}
 
 export async function getConversations(options?: { limit?: number; offset?: number }): Promise<Conversation[]> {
   try {
@@ -1112,32 +1176,25 @@ export async function addLog(logData: Omit<LogEntry, 'id' | 'timestamp'>) {
 
 // --- Team Members & RBAC ---
 
-const DEFAULT_INITIAL_MEMBERS: Omit<TeamMember, 'id' | 'createdAt' | 'updatedAt'>[] = [
-  {
-    fullName: 'Sarah Jenkins',
-    email: 'sarah.jenkins@company.com',
-    avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80',
-    role: 'admin',
-    status: 'online',
-    assignedQueues: ['billing', 'vip', 'general'],
-  },
-  {
-    fullName: 'David Miller',
-    email: 'david.miller@company.com',
-    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80',
-    role: 'agent',
-    status: 'online',
-    assignedQueues: ['technical', 'general'],
-  },
-  {
-    fullName: 'Elena Rostova',
-    email: 'elena.rostova@company.com',
-    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
-    role: 'viewer',
-    status: 'away',
-    assignedQueues: ['reporting'],
-  },
-];
+// tenant_members is the single source of truth for who has access to a
+// tenant. A "team member" is just a tenant_members row joined with its
+// public.users profile -- there is no way to create one directly; access is
+// only ever granted via signup (owner) or invitation acceptance (see below).
+
+function tenantMemberRowToTeamMember(row: any): TeamMember {
+  const user = Array.isArray(row.users) ? row.users[0] : row.users;
+  const rawRole = row.role === 'agent' ? 'operator' : (row.role || 'operator');
+  return {
+    id: row.user_id,
+    fullName: user?.full_name || user?.email || 'Unknown',
+    email: user?.email || undefined,
+    avatarUrl: row.avatar_url || undefined,
+    role: rawRole as UserRole,
+    status: (row.status || 'offline') as UserStatus,
+    assignedQueues: row.assigned_queues || [],
+    createdAt: row.created_at,
+  };
+}
 
 export async function getTeamMembers(): Promise<TeamMember[]> {
   try {
@@ -1145,136 +1202,270 @@ export async function getTeamMembers(): Promise<TeamMember[]> {
     const { tenantId } = await ensureDefaultTenantAndChannel();
 
     const { data, error } = await supabase
-      .from('team_members')
-      .select('*')
+      .from('tenant_members')
+      .select('user_id, role, status, avatar_url, assigned_queues, created_at, users(full_name, email)')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: true });
 
     if (error) {
-      console.error('Failed to fetch team_members from Supabase:', error);
+      console.error('Failed to fetch tenant_members from Supabase:', error);
       return [];
     }
 
-    if (!data || data.length === 0) {
-      return [];
-    }
-
-    return data.map((m: any) => ({
-      id: m.id,
-      fullName: m.full_name,
-      email: m.email,
-      avatarUrl: m.avatar_url,
-      role: m.role as any,
-      status: m.status as any,
-      assignedQueues: m.assigned_queues || [],
-      createdAt: m.created_at,
-      updatedAt: m.updated_at,
-    }));
+    return (data || []).map(tenantMemberRowToTeamMember);
   } catch (err) {
     console.error('Error in getTeamMembers:', err);
     return [];
   }
 }
 
-export async function getTeamMember(id: string): Promise<TeamMember | undefined> {
+export async function getTeamMember(userId: string): Promise<TeamMember | undefined> {
   const members = await getTeamMembers();
-  return members.find((m) => m.id === id);
-}
-
-export async function createTeamMember(
-  member: Omit<TeamMember, 'id' | 'createdAt' | 'updatedAt'>
-): Promise<TeamMember> {
-  try {
-    const supabase = getSupabaseAdmin();
-    const { tenantId } = await ensureDefaultTenantAndChannel();
-
-    const { data, error } = await supabase
-      .from('team_members')
-      .insert({
-        tenant_id: tenantId,
-        full_name: member.fullName,
-        email: member.email,
-        avatar_url: member.avatarUrl,
-        role: member.role,
-        status: member.status || 'offline',
-        assigned_queues: member.assignedQueues || [],
-      })
-      .select('*')
-      .single();
-
-    if (error || !data) {
-      console.error('Failed to create team member in Supabase:', error);
-      throw error || new Error('Failed to create team member');
-    }
-
-    return {
-      id: data.id,
-      fullName: data.full_name,
-      email: data.email,
-      avatarUrl: data.avatar_url,
-      role: data.role as any,
-      status: data.status as any,
-      assignedQueues: data.assigned_queues || [],
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
-    };
-  } catch (err) {
-    console.error('Error in createTeamMember:', err);
-    throw err;
-  }
+  return members.find((m) => m.id === userId);
 }
 
 export async function updateTeamMember(
-  id: string,
-  update: Partial<Omit<TeamMember, 'id' | 'createdAt' | 'updatedAt'>>
+  userId: string,
+  update: { role?: UserRole; status?: UserStatus; assignedQueues?: string[]; avatarUrl?: string }
 ): Promise<void> {
   try {
     const supabase = getSupabaseAdmin();
     const { tenantId } = await ensureDefaultTenantAndChannel();
 
-    const payload: any = {};
-    if (update.fullName !== undefined) payload.full_name = update.fullName;
-    if (update.email !== undefined) payload.email = update.email;
-    if (update.avatarUrl !== undefined) payload.avatar_url = update.avatarUrl;
+    const { data: existing, error: fetchErr } = await supabase
+      .from('tenant_members')
+      .select('role')
+      .eq('tenant_id', tenantId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (fetchErr || !existing) {
+      throw new Error('Team member not found in this workspace');
+    }
+    if (existing.role === 'owner') {
+      throw new Error("The workspace owner's role cannot be changed here");
+    }
+    if (update.role === 'owner') {
+      throw new Error('Ownership cannot be granted through this action');
+    }
+
+    const payload: Record<string, unknown> = {};
     if (update.role !== undefined) payload.role = update.role;
     if (update.status !== undefined) payload.status = update.status;
     if (update.assignedQueues !== undefined) payload.assigned_queues = update.assignedQueues;
-    payload.updated_at = new Date().toISOString();
+    if (update.avatarUrl !== undefined) payload.avatar_url = update.avatarUrl;
 
     const { error } = await supabase
-      .from('team_members')
+      .from('tenant_members')
       .update(payload)
-      .eq('id', id)
-      .eq('tenant_id', tenantId);
+      .eq('tenant_id', tenantId)
+      .eq('user_id', userId);
 
     if (error) {
-      console.error(`Failed to update team member ${id}:`, error);
+      console.error(`Failed to update tenant member ${userId}:`, error);
       throw error;
     }
   } catch (err) {
-    console.error(`Error in updateTeamMember(${id}):`, err);
+    console.error(`Error in updateTeamMember(${userId}):`, err);
     throw err;
   }
 }
 
-export async function deleteTeamMember(id: string): Promise<void> {
+export async function deleteTeamMember(userId: string): Promise<void> {
   try {
     const supabase = getSupabaseAdmin();
     const { tenantId } = await ensureDefaultTenantAndChannel();
 
+    const { data: existing, error: fetchErr } = await supabase
+      .from('tenant_members')
+      .select('role')
+      .eq('tenant_id', tenantId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (fetchErr || !existing) {
+      throw new Error('Team member not found in this workspace');
+    }
+    if (existing.role === 'owner') {
+      throw new Error('The workspace owner cannot be removed');
+    }
+
     const { error } = await supabase
-      .from('team_members')
+      .from('tenant_members')
       .delete()
-      .eq('id', id)
-      .eq('tenant_id', tenantId);
+      .eq('tenant_id', tenantId)
+      .eq('user_id', userId);
 
     if (error) {
-      console.error(`Failed to delete team member ${id}:`, error);
+      console.error(`Failed to delete tenant member ${userId}:`, error);
       throw error;
     }
   } catch (err) {
-    console.error(`Error in deleteTeamMember(${id}):`, err);
+    console.error(`Error in deleteTeamMember(${userId}):`, err);
     throw err;
+  }
+}
+
+// --- Tenant Invitations ---
+// Accepting one creates a real Supabase Auth account (or links an existing
+// one) and a tenant_members row -- the only way anyone ever joins a tenant.
+
+function invitationRowToInvitation(row: any): TenantInvitation {
+  return {
+    id: row.id,
+    email: row.email,
+    role: row.role,
+    status: row.status,
+    invitedBy: row.invited_by || undefined,
+    expiresAt: row.expires_at,
+    createdAt: row.created_at,
+    acceptedAt: row.accepted_at || undefined,
+  };
+}
+
+export async function createTenantInvitation(params: {
+  email: string;
+  role: InvitationRole;
+  invitedBy?: string;
+}): Promise<TenantInvitation & { token: string }> {
+  const supabase = getSupabaseAdmin();
+  const { tenantId } = await ensureDefaultTenantAndChannel();
+  const token = crypto.randomBytes(32).toString('hex');
+  const email = params.email.trim().toLowerCase();
+
+  const { data, error } = await supabase
+    .from('tenant_invitations')
+    .insert({
+      tenant_id: tenantId,
+      email,
+      role: params.role,
+      token,
+      invited_by: params.invitedBy || null,
+    })
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    if (error?.code === '23505') {
+      throw new Error(`An invitation is already pending for ${email}`);
+    }
+    console.error('Failed to create tenant invitation:', error);
+    throw error || new Error('Failed to create invitation');
+  }
+
+  return { ...invitationRowToInvitation(data), token: data.token };
+}
+
+export async function getTenantInvitations(): Promise<TenantInvitation[]> {
+  const supabase = getSupabaseAdmin();
+  const { tenantId } = await ensureDefaultTenantAndChannel();
+
+  const { data, error } = await supabase
+    .from('tenant_invitations')
+    .select('*')
+    .eq('tenant_id', tenantId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Failed to fetch tenant invitations:', error);
+    return [];
+  }
+  // Surface expiry in the admin's list even though we only flip the DB
+  // status lazily (on the next accept/join attempt against that row).
+  return (data || []).map((row: any) => {
+    const invitation = invitationRowToInvitation(row);
+    if (invitation.status === 'pending' && new Date(invitation.expiresAt).getTime() < Date.now()) {
+      invitation.status = 'expired';
+    }
+    return invitation;
+  });
+}
+
+export async function revokeTenantInvitation(id: string): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const { tenantId } = await ensureDefaultTenantAndChannel();
+
+  const { error } = await supabase
+    .from('tenant_invitations')
+    .update({ status: 'revoked' })
+    .eq('id', id)
+    .eq('tenant_id', tenantId)
+    .eq('status', 'pending');
+
+  if (error) {
+    console.error(`Failed to revoke invitation ${id}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Looks up a pending, unexpired invitation by its raw token. Used by the
+ * public /invite/[token] accept flow, so it is intentionally NOT scoped to
+ * the caller's RequestContext (the caller has no session yet).
+ */
+export async function getPendingInvitationByToken(
+  token: string
+): Promise<(TenantInvitation & { tenantId: string; tenantName: string }) | undefined> {
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from('tenant_invitations')
+    .select('*, tenants(name)')
+    .eq('token', token)
+    .eq('status', 'pending')
+    .maybeSingle();
+
+  if (error || !data) return undefined;
+  if (new Date(data.expires_at).getTime() < Date.now()) return undefined;
+
+  return {
+    ...invitationRowToInvitation(data),
+    tenantId: data.tenant_id,
+    tenantName: (data as any).tenants?.name || 'Workspace',
+  };
+}
+
+/**
+ * Atomically transitions a pending invitation to 'accepted' -- the
+ * conditional `.eq('status', 'pending')` means only one concurrent caller
+ * can ever win this update (Postgres serializes the row update), which is
+ * what makes token use-once and race-free. Call this BEFORE creating any
+ * account/membership, and only proceed if it returns true; on any later
+ * failure, call revertInvitationClaim to release the claim.
+ */
+export async function claimInvitation(id: string): Promise<boolean> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('tenant_invitations')
+    .update({ status: 'accepted', accepted_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('status', 'pending')
+    .select('id')
+    .maybeSingle();
+
+  if (error) {
+    console.error(`Failed to claim invitation ${id}:`, error);
+    return false;
+  }
+  return !!data;
+}
+
+/**
+ * Releases a claim taken by claimInvitation when a downstream step
+ * (account creation, tenant_members insert, app_metadata update) failed,
+ * so the invitation can be retried instead of being stranded as
+ * "accepted" with no membership ever actually created.
+ */
+export async function revertInvitationClaim(id: string): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from('tenant_invitations')
+    .update({ status: 'pending', accepted_at: null })
+    .eq('id', id)
+    .eq('status', 'accepted');
+
+  if (error) {
+    console.error(`Failed to revert invitation claim ${id}:`, error);
   }
 }
 
@@ -1878,6 +2069,176 @@ export async function getContactProfile(chatId: string): Promise<ContactProfile 
   }
 }
 
+export async function getAllContactProfiles(options?: {
+  stage?: LeadStage | 'all';
+  search?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{
+  clients: ClientDetailItem[];
+  total: number;
+  stageCounts: Record<string, number>;
+}> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { tenantId } = await ensureDefaultTenantAndChannel();
+
+    // Query all contacts in the tenant with contact_channels and conversations
+    const { data: contactsData, error } = await supabase
+      .from('contacts')
+      .select(`
+        *,
+        contact_channels (
+          id,
+          channel_id,
+          external_id,
+          phone_number,
+          created_at
+        ),
+        conversations (
+          id,
+          last_message_at,
+          last_message_text,
+          status
+        )
+      `)
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false });
+
+    if (error || !contactsData) {
+      console.error('Failed to fetch contact profiles:', error);
+      return { clients: [], total: 0, stageCounts: { all: 0, lead: 0, prospect: 0, customer: 0, vip: 0, churned: 0 } };
+    }
+
+    // Get all conversation IDs to aggregate message counts
+    const convoIds: string[] = [];
+    const convoToContactMap = new Map<string, string>();
+    for (const c of contactsData) {
+      const convos = c.conversations || [];
+      for (const cv of convos) {
+        if (cv.id) {
+          convoIds.push(cv.id);
+          convoToContactMap.set(cv.id, c.id);
+        }
+      }
+    }
+
+    const contactMsgCountMap = new Map<string, number>();
+    if (convoIds.length > 0) {
+      const { data: msgs, error: msgErr } = await supabase
+        .from('messages')
+        .select('conversation_id')
+        .eq('tenant_id', tenantId)
+        .in('conversation_id', convoIds);
+
+      if (!msgErr && msgs) {
+        for (const m of msgs) {
+          const cid = convoToContactMap.get(m.conversation_id);
+          if (cid) {
+            contactMsgCountMap.set(cid, (contactMsgCountMap.get(cid) || 0) + 1);
+          }
+        }
+      }
+    }
+
+    const stageCounts: Record<string, number> = {
+      all: 0,
+      lead: 0,
+      prospect: 0,
+      customer: 0,
+      vip: 0,
+      churned: 0,
+    };
+
+    const allProcessedClients: ClientDetailItem[] = [];
+
+    for (const contact of contactsData) {
+      const channels = contact.contact_channels || [];
+      const phoneChannel = channels.find((ch: any) => ch.external_id?.endsWith('@s.whatsapp.net'));
+      const rawExtId = phoneChannel?.external_id || channels[0]?.external_id || contact.phone || contact.name || contact.id;
+
+      // Skip internal WhatsApp system broadcasts
+      if (
+        rawExtId === 'status@broadcast' ||
+        rawExtId.endsWith('@broadcast') ||
+        rawExtId.endsWith('@newsletter') ||
+        rawExtId === 'status'
+      ) {
+        continue;
+      }
+
+      const externalId = rawExtId;
+      const formattedPhone = formatPhoneNumber(externalId || contact.phone || '');
+      const displayName = formatContactName(contact.name, externalId);
+      const stage: LeadStage = (contact.stage as LeadStage) || 'lead';
+      const msgCount = contactMsgCountMap.get(contact.id) || 0;
+      const initials = getAvatarInitials(displayName, externalId);
+
+      const convos = contact.conversations || [];
+      let lastActiveTime: number | undefined = undefined;
+      if (convos.length > 0 && convos[0].last_message_at) {
+        lastActiveTime = new Date(convos[0].last_message_at).getTime();
+      }
+
+      // Increment stage counter
+      stageCounts.all = (stageCounts.all || 0) + 1;
+      if (stageCounts[stage] !== undefined) {
+        stageCounts[stage] = (stageCounts[stage] || 0) + 1;
+      }
+
+      allProcessedClients.push({
+        id: contact.id,
+        name: displayName,
+        avatarUrl: contact.avatar_url || undefined,
+        phone: contact.phone || (externalId.includes('@') ? externalId.split('@')[0] : externalId),
+        email: contact.email || undefined,
+        company: contact.company || undefined,
+        stage,
+        tags: contact.tags || [],
+        notes: contact.notes || '',
+        customAttributes: contact.custom_attributes || {},
+        createdAt: new Date(contact.created_at).getTime(),
+        updatedAt: contact.updated_at ? new Date(contact.updated_at).getTime() : undefined,
+        messageCount: msgCount,
+        externalId,
+        formattedPhone,
+        lastActiveAt: lastActiveTime,
+        initials,
+      });
+    }
+
+    let filteredClients = allProcessedClients;
+
+    // Filter by stage if requested
+    if (options?.stage && options.stage !== 'all') {
+      filteredClients = filteredClients.filter(c => c.stage === options.stage);
+    }
+
+    // Filter by search query if requested
+    if (options?.search) {
+      const q = options.search.toLowerCase().trim();
+      filteredClients = filteredClients.filter(c => {
+        return (
+          c.name.toLowerCase().includes(q) ||
+          c.formattedPhone.toLowerCase().includes(q) ||
+          (c.email && c.email.toLowerCase().includes(q)) ||
+          (c.company && c.company.toLowerCase().includes(q)) ||
+          (c.tags && c.tags.some((t: string) => t.toLowerCase().includes(q)))
+        );
+      });
+    }
+
+    return {
+      clients: filteredClients,
+      total: filteredClients.length,
+      stageCounts,
+    };
+  } catch (err) {
+    console.error('Error in getAllContactProfiles:', err);
+    return { clients: [], total: 0, stageCounts: { all: 0, lead: 0, prospect: 0, customer: 0, vip: 0, churned: 0 } };
+  }
+}
+
 export async function updateContactProfile(
   chatId: string,
   update: Partial<ContactProfile>
@@ -2345,11 +2706,58 @@ export async function mergeDuplicateContacts(): Promise<{ success: boolean; merg
     const { data, error } = await supabase.rpc('merge_duplicate_contacts_atomic', {
       p_tenant_id: tenantId,
     });
-    if (error) {
-      console.error('Error running merge_duplicate_contacts_atomic:', error);
-      return { success: false, mergedGroups: 0 };
+    if (!error && data?.success) {
+      return { success: true, mergedGroups: data?.merged_groups || 0 };
     }
-    return { success: true, mergedGroups: data?.merged_groups || 0 };
+
+    // Resilient fallback: in-app merge query if remote RPC is pending migration
+    const { data: channels } = await supabase
+      .from('contact_channels')
+      .select('contact_id, phone_number, external_id')
+      .eq('tenant_id', tenantId)
+      .not('phone_number', 'is', null);
+
+    if (!channels || channels.length === 0) {
+      return { success: true, mergedGroups: 0 };
+    }
+
+    const phoneGroups: Record<string, string[]> = {};
+    for (const c of channels) {
+      if (!c.phone_number) continue;
+      if (!phoneGroups[c.phone_number]) phoneGroups[c.phone_number] = [];
+      if (!phoneGroups[c.phone_number].includes(c.contact_id)) {
+        phoneGroups[c.phone_number].push(c.contact_id);
+      }
+    }
+
+    let mergedCount = 0;
+    for (const [, contactIds] of Object.entries(phoneGroups)) {
+      if (contactIds.length <= 1) continue;
+      const primaryId = contactIds[0];
+      const dupIds = contactIds.slice(1);
+
+      await supabase
+        .from('contact_channels')
+        .update({ contact_id: primaryId })
+        .in('contact_id', dupIds)
+        .eq('tenant_id', tenantId);
+
+      await supabase
+        .from('conversations')
+        .delete()
+        .in('contact_id', dupIds)
+        .eq('tenant_id', tenantId);
+
+      await supabase
+        .from('contacts')
+        .delete()
+        .in('id', dupIds)
+        .eq('tenant_id', tenantId);
+
+      mergedCount++;
+    }
+
+    return { success: true, mergedGroups: mergedCount };
   } catch (err) {
     console.error('Error in mergeDuplicateContacts:', err);
     return { success: false, mergedGroups: 0 };

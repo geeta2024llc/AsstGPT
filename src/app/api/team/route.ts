@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getTeamMembers, createTeamMember, addLog } from '@/lib/db';
+import { NextResponse } from 'next/server';
+import { getTeamMembers } from '@/lib/db';
 import { withApiAuth } from '@/lib/api-guard';
 
 export const dynamic = 'force-dynamic';
@@ -17,37 +17,15 @@ export const GET = withApiAuth(
   { roles: ['admin', 'operator', 'viewer'] }
 );
 
+// Members are provisioned exclusively through invitation acceptance now
+// (tenant_members is the single source of truth for tenant access), so
+// there is no direct "create a team member" action anymore.
 export const POST = withApiAuth(
-  async (request: NextRequest, ctx) => {
-    try {
-      const body = await request.json();
-      const { fullName, email, avatarUrl, role = 'agent', status = 'online', assignedQueues = [] } = body;
-
-      if (!fullName || typeof fullName !== 'string' || !fullName.trim()) {
-        return NextResponse.json({ message: 'Full name is required' }, { status: 400 });
-      }
-
-      const newMember = await createTeamMember({
-        fullName: fullName.trim(),
-        email: email ? email.trim() : undefined,
-        avatarUrl: avatarUrl || undefined,
-        role,
-        status,
-        assignedQueues,
-      });
-
-      await addLog({
-        user: ctx.userId || 'Administrator',
-        action: 'Team Member Created',
-        details: `Added ${newMember.fullName} with role "${newMember.role}"`,
-        type: 'info',
-      });
-
-      return NextResponse.json(newMember, { status: 201 });
-    } catch (error: any) {
-      console.error('Failed to create team member:', error);
-      return NextResponse.json({ message: error.message || 'Failed to create team member' }, { status: 500 });
-    }
+  async () => {
+    return NextResponse.json(
+      { message: 'Team members can no longer be created directly. Send an invitation via POST /api/team/invitations instead.' },
+      { status: 410 }
+    );
   },
   { roles: ['admin'] }
 );

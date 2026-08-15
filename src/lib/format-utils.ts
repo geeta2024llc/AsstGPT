@@ -2,6 +2,45 @@
  * Utility functions for formatting contact names, phone numbers, and WhatsApp JIDs.
  */
 
+const SYNTHETIC_NAMES_BLACKLIST = [
+  'ai follow-up',
+  'ai follow up',
+  'client pro inquiries',
+  'pro inquiries',
+  'sample inquiry',
+  'me',
+  'system',
+  'unknown',
+  'whatsapp contact',
+  'whatsapp user',
+  'auto ai',
+  'ai agent',
+  'ai assistant',
+  're-engagement engine',
+];
+
+/**
+ * Checks if a candidate string is a synthetic bot/system tag or test artifact
+ * rather than an authentic human customer name.
+ */
+export function isSyntheticOrGenericName(name?: string): boolean {
+  if (!name) return true;
+  const lower = name.trim().toLowerCase();
+  if (SYNTHETIC_NAMES_BLACKLIST.some((b) => lower === b || lower.startsWith(b))) {
+    return true;
+  }
+  if (
+    lower.startsWith('test_') ||
+    lower.startsWith('test-') ||
+    lower.includes('_iso_') ||
+    lower.includes('_stale_') ||
+    lower.includes('iso_178')
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Formats a raw phone number or WhatsApp JID into an international format.
  */
@@ -52,21 +91,21 @@ export function formatPhoneNumber(raw?: string): string {
 
 /**
  * Returns a human-friendly display name for a contact.
- * Prioritizes actual contact names over raw numbers or JIDs.
+ * Prioritizes authentic human names and safely filters out synthetic bot labels.
  */
 export function formatContactName(name?: string, fallbackId?: string): string {
   const cleanName = (name || '').trim();
 
-  // If we have a valid non-system name containing letters, use it
-  if (cleanName && cleanName.toLowerCase() !== 'me' && cleanName.toLowerCase() !== 'system') {
+  // If we have a valid non-synthetic name containing letters, use it
+  if (cleanName && !isSyntheticOrGenericName(cleanName)) {
     const hasLetters = /[a-zA-Z\u0900-\u097F]/.test(cleanName);
     if (hasLetters) {
       return cleanName;
     }
   }
 
-  // If name is numeric or missing, try formatting the phone number
-  const candidate = cleanName || fallbackId || '';
+  // If name is synthetic, numeric or missing, format the recipient phone number
+  const candidate = fallbackId || cleanName || '';
   const isLid = candidate.endsWith('@lid') || (fallbackId && fallbackId.endsWith('@lid'));
   const cleanedDigits = candidate.replace(/@(s\.whatsapp\.net|lid|c\.us)/g, '').replace(/\D/g, '');
 
@@ -78,7 +117,49 @@ export function formatContactName(name?: string, fallbackId?: string): string {
     return formatPhoneNumber(cleanedDigits);
   }
 
-  return cleanName || fallbackId || 'WhatsApp Contact';
+  return fallbackId?.split('@')[0] || 'WhatsApp Contact';
+}
+
+export interface ContactIdentifier {
+  displayName: string;
+  phoneNumber: string;
+  hasCustomName: boolean;
+  avatarInitials: string;
+}
+
+/**
+ * Extracts comprehensive contact credentials: real human name, formatted phone number,
+ * and whether a distinct custom name exists.
+ */
+export function getContactIdentifier(name?: string, fallbackId?: string, company?: string): ContactIdentifier {
+  const cleanName = (name || '').trim();
+  const phone = formatPhoneNumber(fallbackId || name);
+  const isSynthetic = isSyntheticOrGenericName(cleanName);
+
+  let displayName = '';
+  let hasCustomName = false;
+
+  if (!isSynthetic && cleanName) {
+    const hasLetters = /[a-zA-Z\u0900-\u097F]/.test(cleanName);
+    if (hasLetters) {
+      displayName = cleanName;
+      hasCustomName = true;
+    }
+  }
+
+  if (!displayName) {
+    displayName = phone || formatContactName(name, fallbackId);
+    hasCustomName = false;
+  }
+
+  const avatarInitials = getAvatarInitials(displayName, fallbackId);
+
+  return {
+    displayName,
+    phoneNumber: phone || (fallbackId?.split('@')[0] || ''),
+    hasCustomName,
+    avatarInitials,
+  };
 }
 
 /**
@@ -116,6 +197,15 @@ export function getAvatarInitials(name?: string, fallbackId?: string): string {
   const target = (name || '').trim() || (fallbackId || '').trim();
   if (!target) return '👤';
 
+  // If synthetic name, return user icon
+  if (isSyntheticOrGenericName(target)) {
+    const digits = target.replace(/\D/g, '');
+    if (digits.length >= 2) {
+      return digits.slice(-2);
+    }
+    return '👤';
+  }
+
   // Extract letters (including Nepali/Devanagari if present)
   const lettersOnly = target.replace(/[^a-zA-Z\u0900-\u097F\s]/g, '').trim();
 
@@ -127,7 +217,7 @@ export function getAvatarInitials(name?: string, fallbackId?: string): string {
     return words[0].slice(0, 2).toUpperCase();
   }
 
-  // If purely digits / phone, return last 2 digits or user icon
+  // If purely digits / phone, return last 2 digits
   const digits = target.replace(/\D/g, '');
   if (digits.length >= 2) {
     return digits.slice(-2);

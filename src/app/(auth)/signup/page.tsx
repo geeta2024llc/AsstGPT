@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
 import { Sparkles, Lock, Mail, Building2, User, ArrowRight, ShieldCheck, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 export default function SignupPage() {
@@ -22,27 +21,22 @@ export default function SignupPage() {
     setError(null);
 
     try {
-      const { data, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-            company_name: companyName,
-            role: 'admin',
-          },
-        },
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fullName, companyName, email, password }),
       });
+      const data = await res.json();
 
-      if (authError) {
-        throw authError;
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to create workspace');
       }
 
       if (data?.session) {
         document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=604800; SameSite=Lax; secure`;
         router.push('/inbox');
       } else {
-        // Confirmation email flow or auto-sign in
+        // Account was provisioned but a session could not be minted automatically
         router.push('/login?message=Account created successfully. Please log in.');
       }
     } catch (err: any) {

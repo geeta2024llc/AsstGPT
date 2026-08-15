@@ -1,6 +1,9 @@
 import { AISettings, AIProvider, KnowledgeFile } from '@/types';
 import { getKnowledgeFile, getKnowledgeFiles } from './db';
 import { SYNONYM_MAP } from './faq-matcher';
+import { getRequestContext } from './request-context';
+import { getSupabaseAdmin } from './supabase';
+import { estimateCostUsd } from './ai-pricing';
 
 /**
  * Performs lightweight relevance retrieval across tenant-enabled knowledge sources.
@@ -89,6 +92,51 @@ export function clearProviderCooldowns(): void {
 }
 
 /**
+ * Fire-and-forget usage/cost log for the super-admin AI usage dashboard.
+ * Never throws -- a logging failure must not affect the chat response.
+ * tenantId falls back the same way ensureDefaultTenantAndChannel() does,
+ * since WhatsApp message processing runs outside any HTTP RequestContext.
+ */
+function logAiUsage(entry: {
+  provider: AIProvider;
+  model?: string;
+  requestType: 'chat' | 'transcription' | 'vision';
+  inputTokens?: number;
+  outputTokens?: number;
+  latencyMs: number;
+  success: boolean;
+  errorMessage?: string;
+}): void {
+  const tenantId = getRequestContext()?.tenantId || process.env.DEFAULT_TENANT_ID;
+  const estimatedCostUsd = estimateCostUsd(entry.provider, entry.inputTokens, entry.outputTokens);
+
+  getSupabaseAdmin()
+    .from('ai_usage_logs')
+    .insert({
+      tenant_id: tenantId || null,
+      provider: entry.provider,
+      model: entry.model || null,
+      request_type: entry.requestType,
+      input_tokens: entry.inputTokens ?? null,
+      output_tokens: entry.outputTokens ?? null,
+      estimated_cost_usd: estimatedCostUsd,
+      latency_ms: entry.latencyMs,
+      success: entry.success,
+      error_message: entry.errorMessage?.slice(0, 500) || null,
+    })
+    .then(({ error }) => {
+      if (error) console.error('[AI USAGE LOG] Failed to record usage:', error);
+    });
+}
+
+interface ProviderCallResult {
+  text: string;
+  model?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
+/**
  * Transcribes an audio note / voice message using Google Gemini Multimodal Audio.
  */
 export async function transcribeAudio(
@@ -133,6 +181,7 @@ export async function transcribeAudio(
     'gemini-flash-latest',
   ];
   let lastAudioErr: any = null;
+  const transcriptionStart = Date.now();
 
   for (const model of transcriptionModels) {
     try {
@@ -163,6 +212,15 @@ export async function transcribeAudio(
       }
 
       const transcript = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+      logAiUsage({
+        provider: 'gemini',
+        model,
+        requestType: 'transcription',
+        inputTokens: data.usageMetadata?.promptTokenCount,
+        outputTokens: data.usageMetadata?.candidatesTokenCount,
+        latencyMs: Date.now() - transcriptionStart,
+        success: true,
+      });
       return transcript;
     } catch (err: any) {
       lastAudioErr = err;
@@ -170,6 +228,13 @@ export async function transcribeAudio(
     }
   }
 
+  logAiUsage({
+    provider: 'gemini',
+    requestType: 'transcription',
+    latencyMs: Date.now() - transcriptionStart,
+    success: false,
+    errorMessage: lastAudioErr?.message || JSON.stringify(lastAudioErr),
+  });
   throw new Error(`Gemini Audio Transcription Error: ${lastAudioErr?.message || JSON.stringify(lastAudioErr)}`);
 }
 
@@ -181,7 +246,7 @@ async function callProviderModel(
   context: string,
   conversationHistory?: Array<{ fromMe: boolean; text: string }>,
   mediaAttachment?: MediaAttachment
-): Promise<string> {
+): Promise<ProviderCallResult> {
   const systemPrompt = settings.systemPrompt || 'You are a helpful customer service representative on WhatsApp.';
 
   switch (provider) {
@@ -254,7 +319,12 @@ async function callProviderModel(
       if (data.error) {
         throw new Error(`OpenAI API Error: ${data.error.message || JSON.stringify(data.error)}`);
       }
-      return data.choices?.[0]?.message?.content?.trim() || '';
+      return {
+        text: data.choices?.[0]?.message?.content?.trim() || '',
+        model: data.model,
+        inputTokens: data.usage?.prompt_tokens,
+        outputTokens: data.usage?.completion_tokens,
+      };
     }
 
     case 'gemini': {
@@ -362,7 +432,12 @@ async function callProviderModel(
 
           const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
           if (candidateText) {
-            return candidateText;
+            return {
+              text: candidateText,
+              model,
+              inputTokens: data.usageMetadata?.promptTokenCount,
+              outputTokens: data.usageMetadata?.candidatesTokenCount,
+            };
           }
         } catch (err: any) {
           lastError = err;
@@ -413,7 +488,12 @@ async function callProviderModel(
       if (data.error) {
         throw new Error(`Anthropic API Error: ${data.error.message || JSON.stringify(data.error)}`);
       }
-      return data.content?.[0]?.text?.trim() || '';
+      return {
+        text: data.content?.[0]?.text?.trim() || '',
+        model: data.model,
+        inputTokens: data.usage?.input_tokens,
+        outputTokens: data.usage?.output_tokens,
+      };
     }
 
     case 'groq': {
@@ -508,7 +588,12 @@ async function callProviderModel(
 
           const candidateText = data.choices?.[0]?.message?.content?.trim();
           if (candidateText) {
-            return candidateText;
+            return {
+              text: candidateText,
+              model: candidateModel,
+              inputTokens: data.usage?.prompt_tokens,
+              outputTokens: data.usage?.completion_tokens,
+            };
           }
         } catch (err: any) {
           lastGroqErr = err;
@@ -588,11 +673,12 @@ export async function generateAIResponse(
       continue;
     }
 
+    const callStart = Date.now();
     try {
       if (candidateProvider !== primaryProvider) {
         console.log(`[AI FAILOVER] Attempting cross-provider failover with "${candidateProvider}"...`);
       }
-      const responseText = await callProviderModel(
+      const result = await callProviderModel(
         candidateProvider,
         candidateApiKey,
         userText,
@@ -602,14 +688,30 @@ export async function generateAIResponse(
         mediaAttachment
       );
 
-      if (responseText) {
+      if (result.text) {
+        logAiUsage({
+          provider: candidateProvider,
+          model: result.model,
+          requestType: mediaAttachment?.mimeType.startsWith('image/') ? 'vision' : 'chat',
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+          latencyMs: Date.now() - callStart,
+          success: true,
+        });
         console.log('=== AI RESPONSE GENERATION END ===');
-        console.log('Final response text generated:', responseText.slice(0, 100));
-        return responseText;
+        console.log('Final response text generated:', result.text.slice(0, 100));
+        return result.text;
       }
     } catch (err: any) {
       lastProviderErr = err;
       console.error(`AI provider call failed for ${candidateProvider}:`, err.message);
+      logAiUsage({
+        provider: candidateProvider,
+        requestType: mediaAttachment?.mimeType.startsWith('image/') ? 'vision' : 'chat',
+        latencyMs: Date.now() - callStart,
+        success: false,
+        errorMessage: err.message,
+      });
     }
   }
 

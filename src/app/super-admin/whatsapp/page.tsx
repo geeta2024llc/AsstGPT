@@ -1,0 +1,144 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Loader2, RotateCcw } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+
+interface WhatsappData {
+  liveConnection: {
+    status: string;
+    account: any;
+    lastDisconnect: any;
+    leaderHolderId: string | null;
+    leaseExpiresAt: string | null;
+    updatedAt: string | null;
+  };
+  tenantChannels: Array<{ id: string; tenantId: string; tenantName?: string; status: string; displayName: string; updatedAt: string }>;
+  outboundQueuePending: number;
+}
+
+export default function WhatsappMonitorPage() {
+  const [data, setData] = useState<WhatsappData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [resetting, setResetting] = useState(false);
+  const { toast } = useToast();
+
+  const fetchData = async () => {
+    const res = await fetch('/api/super-admin/whatsapp');
+    if (res.ok) setData(await res.json());
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const handleReset = async () => {
+    if (!confirm('Force-reset the shared WhatsApp session? This logs it out and clears auth state -- a fresh QR scan will be required.')) return;
+    setResetting(true);
+    try {
+      const res = await fetch('/api/super-admin/whatsapp/default/reset', { method: 'POST' });
+      if (!res.ok) throw new Error('Reset failed');
+      await fetchData();
+      toast({ title: 'WhatsApp session reset', description: 'A fresh QR pairing will be required.' });
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error', description: (err as Error).message });
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  if (loading || !data) {
+    return (
+      <div className="flex items-center justify-center p-12">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold font-headline">WhatsApp Connections</h1>
+        <p className="text-sm text-muted-foreground">The platform currently runs one shared WhatsApp session per deployment.</p>
+      </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Live Connection</CardTitle>
+            <CardDescription>Leader-elected shared session (src/lib/whatsapp-leader.ts)</CardDescription>
+          </div>
+          <Button variant="destructive" size="sm" className="gap-1.5" disabled={resetting} onClick={handleReset}>
+            <RotateCcw className="h-3.5 w-3.5" />
+            Force Reset
+          </Button>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div>
+            <div className="text-muted-foreground">Status</div>
+            <Badge variant={data.liveConnection.status === 'connected' ? 'secondary' : 'outline'} className="capitalize mt-1">
+              {data.liveConnection.status}
+            </Badge>
+          </div>
+          <div>
+            <div className="text-muted-foreground">Current Leader</div>
+            <div className="font-medium">{data.liveConnection.leaderHolderId || '—'}</div>
+          </div>
+          <div>
+            <div className="text-muted-foreground">Lease Expires</div>
+            <div className="font-medium">{data.liveConnection.leaseExpiresAt ? new Date(data.liveConnection.leaseExpiresAt).toLocaleTimeString() : '—'}</div>
+          </div>
+          <div>
+            <div className="text-muted-foreground">Outbound Queue (pending)</div>
+            <div className="font-medium">{data.outboundQueuePending}</div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Tenant Channels</CardTitle>
+          <CardDescription>Per-tenant channel records (configured status, not necessarily live).</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Tenant</TableHead>
+                <TableHead>Channel</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Updated</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.tenantChannels.map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell>{c.tenantName || c.tenantId.slice(0, 8)}</TableCell>
+                  <TableCell>{c.displayName}</TableCell>
+                  <TableCell>
+                    <Badge variant={c.status === 'connected' ? 'secondary' : 'outline'} className="capitalize">
+                      {c.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{new Date(c.updatedAt).toLocaleString()}</TableCell>
+                </TableRow>
+              ))}
+              {data.tenantChannels.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                    No WhatsApp channels configured.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

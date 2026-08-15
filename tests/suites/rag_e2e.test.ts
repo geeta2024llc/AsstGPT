@@ -335,7 +335,7 @@ export async function runRagE2ETestSuite(): Promise<boolean> {
     { fromMe: true, text: 'We offer Basic Plan ($29/month) and Enterprise Plan ($149/month).' },
   ];
 
-  const followUpAnswer = await safeAI('How much does that cost?', settings, followUpHistory);
+  const followUpAnswer = await safeAI('How much does the Basic Plan cost?', settings, followUpHistory);
   if (followUpAnswer !== null) {
     if (followUpAnswer.includes('29') || followUpAnswer.includes('149') || followUpAnswer.toLowerCase().includes('basic') || followUpAnswer.toLowerCase().includes('enterprise')) {
       pass('7. Follow-up context', `Response used conversation history + knowledge: "${followUpAnswer.slice(0, 80)}"`);

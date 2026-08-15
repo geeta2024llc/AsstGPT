@@ -4,6 +4,10 @@ import { withApiAuth } from '@/lib/api-guard';
 
 export const dynamic = 'force-dynamic';
 
+// :id is the member's user_id (tenant_members.user_id / auth user id) --
+// full name and email are no longer editable here since they belong to the
+// member's real account, not a directory entry.
+
 export const GET = withApiAuth(
   async (
     _request: NextRequest,
@@ -39,12 +43,17 @@ export const PUT = withApiAuth(
         return NextResponse.json({ message: 'Team member not found' }, { status: 404 });
       }
 
-      await updateTeamMember(id, body);
+      await updateTeamMember(id, {
+        role: body.role,
+        status: body.status,
+        assignedQueues: body.assignedQueues,
+        avatarUrl: body.avatarUrl,
+      });
 
       await addLog({
         user: ctx.userId || 'Administrator',
         action: 'Team Member Updated',
-        details: `Updated details for ${body.fullName || existing.fullName} (Role: ${body.role || existing.role})`,
+        details: `Updated ${existing.fullName} (Role: ${body.role || existing.role})`,
         type: 'info',
       });
 
@@ -52,7 +61,7 @@ export const PUT = withApiAuth(
       return NextResponse.json(refreshed);
     } catch (error: any) {
       console.error('Failed to update team member:', error);
-      return NextResponse.json({ message: error.message || 'Failed to update team member' }, { status: 500 });
+      return NextResponse.json({ message: error.message || 'Failed to update team member' }, { status: 400 });
     }
   },
   { roles: ['admin'] }
@@ -81,7 +90,7 @@ export const DELETE = withApiAuth(
       return NextResponse.json({ success: true, id });
     } catch (error: any) {
       console.error('Failed to delete team member:', error);
-      return NextResponse.json({ message: error.message || 'Failed to delete team member' }, { status: 500 });
+      return NextResponse.json({ message: error.message || 'Failed to delete team member' }, { status: 400 });
     }
   },
   { roles: ['admin'] }

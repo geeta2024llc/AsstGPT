@@ -22,11 +22,13 @@ import {
   Bot,
   LayoutDashboard,
   MessageSquare,
+  Users,
   Settings,
   BookMarked,
   History,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import ImpersonationBanner from '@/components/impersonation-banner';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -69,11 +71,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <SidebarMenuButton
                 asChild
                 isActive={pathname.startsWith('/agents')}
-                tooltip="Agent Designer"
+                tooltip="Bot Persona, Roles & Prompts"
               >
                 <Link href="/agents">
                   <Bot />
-                  <span>Agents</span>
+                  <span>Agents & Prompts</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -89,15 +91,27 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
-             <SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={pathname.startsWith('/clients')}
+                tooltip="Client Details & CRM"
+              >
+                <Link href="/clients">
+                  <Users />
+                  <span>Client Details</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
               <SidebarMenuButton
                 asChild
                 isActive={pathname.startsWith('/knowledge-base')}
-                tooltip="Knowledge Base"
+                tooltip="AI Memory"
               >
                 <Link href="/knowledge-base">
                   <BookMarked />
-                  <span>Knowledge Base</span>
+                  <span>AI Memory</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -134,6 +148,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
+        <ImpersonationBanner />
         <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-sm md:px-6">
           <SidebarTrigger />
           <div className="flex items-center gap-2">

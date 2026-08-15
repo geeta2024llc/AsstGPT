@@ -1,4 +1,4 @@
-export type UserRole = 'owner' | 'admin' | 'agent' | 'member' | 'viewer';
+export type UserRole = 'owner' | 'admin' | 'operator' | 'viewer';
 export type UserStatus = 'online' | 'away' | 'offline';
 
 export interface TeamMember {
@@ -11,6 +11,44 @@ export interface TeamMember {
   assignedQueues?: string[];
   createdAt?: number;
   updatedAt?: number;
+}
+
+export type InvitationRole = Exclude<UserRole, 'owner'>;
+export type InvitationStatus = 'pending' | 'accepted' | 'revoked' | 'expired';
+
+export interface TenantInvitation {
+  id: string;
+  email: string;
+  role: InvitationRole;
+  status: InvitationStatus;
+  invitedBy?: string;
+  expiresAt: string;
+  createdAt: string;
+  acceptedAt?: string;
+  /** Only present in the response immediately after creation; never re-served on list. */
+  inviteUrl?: string;
+}
+
+export interface TenantNotificationSettings {
+  notifyEmail?: string;
+  emailOnNewConversation?: boolean;
+  emailOnHandoffRequested?: boolean;
+  emailDailyDigest?: boolean;
+}
+
+export interface TenantProfile {
+  id: string;
+  name: string;
+  slug: string;
+  logoUrl?: string;
+  timezone: string;
+  businessDescription?: string;
+  supportEmail?: string;
+  notificationSettings: TenantNotificationSettings;
+  plan: string;
+  isActive: boolean;
+  suspendedReason?: string;
+  createdAt: string;
 }
 
 export type HandoffRuleType = 'confidence_threshold' | 'intent_detected' | 'keyword_match' | 'consecutive_fallback';
@@ -118,6 +156,13 @@ export interface ContactProfile {
   createdAt: number;
   updatedAt?: number;
   messageCount?: number;
+}
+
+export interface ClientDetailItem extends ContactProfile {
+  externalId: string;
+  formattedPhone: string;
+  lastActiveAt?: number;
+  initials: string;
 }
 
 export type SentimentType = 'positive' | 'neutral' | 'negative' | 'frustrated';

@@ -21,6 +21,7 @@ import { runRailwayAndMultiReplicaTestSuite } from './suites/railway_multi_repli
 import { runContactDedupAndJidReconciliationTestSuite } from './suites/contact_dedup_and_jid_reconciliation.test';
 import { runHandoffSummaryAndReEngagementTests } from './suites/handoff_summary_and_reengagement.test';
 import { runAgentsDesignerSandboxTestSuite } from './suites/agents_designer_sandbox.test';
+import { runSuperAdminTestSuite } from './suites/super_admin.test';
 
 interface SuiteResult {
   name: string;
@@ -56,6 +57,7 @@ async function runMasterTestSuite() {
     { name: 'Contact Dedup & JID Reconciliation', runner: runContactDedupAndJidReconciliationTestSuite },
     { name: 'Hand-Off Summary & Re-Engagement', runner: runHandoffSummaryAndReEngagementTests },
     { name: 'Agents Designer & Live Sandbox', runner: runAgentsDesignerSandboxTestSuite },
+    { name: 'Super Admin Platform Panel', runner: runSuperAdminTestSuite },
   ];
 
   const results: SuiteResult[] = [];

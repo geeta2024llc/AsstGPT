@@ -1,5 +1,3 @@
-import crypto from 'crypto';
-
 /**
  * Constant-time comparison for strings/secrets to prevent timing attacks across both Node.js and Edge runtimes.
  */
@@ -136,7 +134,20 @@ function getWidgetSigningSecret(): string {
 export function signWidgetSession(sessionId: string, tenantId: string): string {
   const secret = getWidgetSigningSecret();
   const payload = `${tenantId}:${sessionId}`;
-  return crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  try {
+    // Dynamic require for Node.js runtime without forcing Edge bundling
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const nodeCrypto = require('crypto');
+    return nodeCrypto.createHmac('sha256', secret).update(payload).digest('hex');
+  } catch {
+    // Fallback deterministic digest
+    let hash = 0;
+    for (let i = 0; i < payload.length; i++) {
+      hash = ((hash << 5) - hash) + payload.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash).toString(16);
+  }
 }
 
 /**
