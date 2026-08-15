@@ -18,24 +18,36 @@ interface WhatsappData {
     updatedAt: string | null;
   };
   tenantChannels: Array<{ id: string; tenantId: string; tenantName?: string; status: string; displayName: string; updatedAt: string }>;
+  tenantChannelsTotal: number;
+  page: number;
+  pageSize: number;
   outboundQueuePending: number;
 }
 
 export default function WhatsappMonitorPage() {
   const [data, setData] = useState<WhatsappData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tableLoading, setTableLoading] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [page, setPage] = useState(1);
   const { toast } = useToast();
 
-  const fetchData = async () => {
-    const res = await fetch('/api/super-admin/whatsapp');
+  const fetchData = async (p = page) => {
+    setTableLoading(true);
+    const res = await fetch(`/api/super-admin/whatsapp?page=${p}`);
     if (res.ok) setData(await res.json());
     setLoading(false);
+    setTableLoading(false);
   };
 
   useEffect(() => {
-    fetchData();
+    fetchData(1);
   }, []);
+
+  const goToPage = (p: number) => {
+    setPage(p);
+    fetchData(p);
+  };
 
   const handleReset = async () => {
     if (!confirm('Force-reset the shared WhatsApp session? This logs it out and clears auth state -- a fresh QR scan will be required.')) return;
@@ -106,37 +118,63 @@ export default function WhatsappMonitorPage() {
           <CardDescription>Per-tenant channel records (configured status, not necessarily live).</CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Tenant</TableHead>
-                <TableHead>Channel</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Updated</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.tenantChannels.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell>{c.tenantName || c.tenantId.slice(0, 8)}</TableCell>
-                  <TableCell>{c.displayName}</TableCell>
-                  <TableCell>
-                    <Badge variant={c.status === 'connected' ? 'secondary' : 'outline'} className="capitalize">
-                      {c.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{new Date(c.updatedAt).toLocaleString()}</TableCell>
-                </TableRow>
-              ))}
-              {data.tenantChannels.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
-                    No WhatsApp channels configured.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+          {tableLoading ? (
+            <div className="flex items-center justify-center p-12">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            </div>
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tenant</TableHead>
+                    <TableHead>Channel</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Updated</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.tenantChannels.map((c) => (
+                    <TableRow key={c.id}>
+                      <TableCell>{c.tenantName || c.tenantId.slice(0, 8)}</TableCell>
+                      <TableCell>{c.displayName}</TableCell>
+                      <TableCell>
+                        <Badge variant={c.status === 'connected' ? 'secondary' : 'outline'} className="capitalize">
+                          {c.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{new Date(c.updatedAt).toLocaleString()}</TableCell>
+                    </TableRow>
+                  ))}
+                  {data.tenantChannels.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground">
+                        No WhatsApp channels configured.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+              <div className="flex items-center justify-between pt-4">
+                <span className="text-xs text-muted-foreground">
+                  Page {data.page} of {Math.max(1, Math.ceil(data.tenantChannelsTotal / data.pageSize))} &middot; {data.tenantChannelsTotal} total
+                </span>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => goToPage(page - 1)}>
+                    Previous
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={page >= Math.ceil(data.tenantChannelsTotal / data.pageSize)}
+                    onClick={() => goToPage(page + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

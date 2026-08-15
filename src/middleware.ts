@@ -116,7 +116,7 @@ export async function middleware(request: NextRequest) {
         { status: 401 }
       );
     }
-    const targetLogin = isSuperAdminRoute ? '/super-admin/login' : '/login';
+    const targetLogin = '/login';
     const loginUrl = new URL(targetLogin, request.url);
     loginUrl.searchParams.set('redirectTo', pathname);
     return NextResponse.redirect(loginUrl);

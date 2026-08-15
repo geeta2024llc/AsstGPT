@@ -15,6 +15,58 @@ export interface PlatformContext {
 }
 
 /**
+ * Retrieves the platform admin record from public.platform_admins.
+ * Auto-bootstraps designated super admin emails (e.g. from SUPER_ADMIN_EMAILS env or primary admin accounts).
+ */
+export async function getPlatformAdminRecord(email: string, userId?: string) {
+  const normalizedEmail = email.toLowerCase().trim();
+  const admin = getSupabaseAdmin();
+
+  let { data } = await admin
+    .from('platform_admins')
+    .select('user_id, email, platform_role, revoked_at')
+    .eq('email', normalizedEmail)
+    .is('revoked_at', null)
+    .maybeSingle();
+
+  if (!data) {
+    const envSuperAdmins = (process.env.SUPER_ADMIN_EMAILS || process.env.SUPER_ADMIN_EMAIL || '')
+      .toLowerCase()
+      .split(',')
+      .map((e) => e.trim())
+      .filter(Boolean);
+
+    const isDesignatedSuperAdmin =
+      envSuperAdmins.includes(normalizedEmail) ||
+      normalizedEmail === 'asst.dosm.opl@gmail.com' ||
+      normalizedEmail === 'geeta2024llc@gmail.com';
+
+    if (isDesignatedSuperAdmin) {
+      const { data: inserted, error: insertErr } = await admin
+        .from('platform_admins')
+        .upsert(
+          {
+            email: normalizedEmail,
+            platform_role: 'super_admin',
+            user_id: userId || null,
+          },
+          { onConflict: 'email' }
+        )
+        .select('user_id, email, platform_role, revoked_at')
+        .single();
+
+      if (!insertErr && inserted) {
+        data = inserted;
+      }
+    }
+  } else if (userId && !data.user_id) {
+    await admin.from('platform_admins').update({ user_id: userId }).eq('email', data.email);
+  }
+
+  return data;
+}
+
+/**
  * Resolves the caller's platform-admin identity, independent of tenant RBAC.
  * Trusts x-user-id/x-user-email (cryptographically verified upstream by
  * middleware.ts against the Supabase JWT) but never trusts x-user-role,
@@ -25,20 +77,8 @@ async function resolvePlatformContext(req: NextRequest): Promise<PlatformContext
   const email = req.headers.get('x-user-email');
   if (!email) return null;
 
-  const admin = getSupabaseAdmin();
-  const { data, error } = await admin
-    .from('platform_admins')
-    .select('user_id, email, platform_role, revoked_at')
-    .eq('email', email.toLowerCase())
-    .is('revoked_at', null)
-    .maybeSingle();
-
-  if (error || !data) return null;
-
-  // Opportunistically backfill user_id once the admin has a resolved auth identity.
-  if (userId && !data.user_id) {
-    await admin.from('platform_admins').update({ user_id: userId }).eq('email', data.email);
-  }
+  const data = await getPlatformAdminRecord(email, userId);
+  if (!data) return null;
 
   const forwardedFor = req.headers.get('x-forwarded-for');
   const ip = forwardedFor?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown';
@@ -62,11 +102,6 @@ export interface PlatformAuthOptions {
  * a tenant owner/admin has zero standing here unless they also have a row
  * in platform_admins.
  */
-// Overloaded so the wrapped export's declared type exactly matches what
-// Next.js's generated per-route param check expects: routes with no dynamic
-// segment get a handler with no second parameter at all, while routes with
-// a [param] segment get one with a required, exact RouteContext -- a single
-// signature with an optional/union param satisfies neither check.
 export function withPlatformAdminAuth(
   handler: (req: NextRequest, ctx: PlatformContext) => Promise<NextResponse>,
   options?: PlatformAuthOptions

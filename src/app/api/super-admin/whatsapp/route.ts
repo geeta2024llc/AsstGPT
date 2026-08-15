@@ -10,13 +10,20 @@ export const dynamic = 'force-dynamic';
 // src/lib/whatsapp-leader.ts). This endpoint reports that live session's
 // state plus the per-tenant `channels` rows (which do carry tenant_id) so
 // the panel is honest about what's actually per-tenant today vs. shared.
-export const GET = withPlatformAdminAuth(async (_req: NextRequest) => {
+export const GET = withPlatformAdminAuth(async (req: NextRequest) => {
   const admin = getSupabaseAdmin();
+  const page = Math.max(1, Number(req.nextUrl.searchParams.get('page')) || 1);
+  const pageSize = 10;
 
-  const [{ data: connectionState }, { data: sessionLock }, { data: channelRows }, { count: queuePending }] = await Promise.all([
+  const [{ data: connectionState }, { data: sessionLock }, { data: channelRows, count: channelsTotal }, { count: queuePending }] = await Promise.all([
     admin.from('whatsapp_connection_state').select('*').eq('channel_id', 'default').maybeSingle(),
     admin.from('whatsapp_session_lock').select('*').eq('channel_id', 'default').maybeSingle(),
-    admin.from('channels').select('id, tenant_id, status, display_name, external_account_id, updated_at, tenants(name, slug)').eq('type', 'whatsapp').order('updated_at', { ascending: false }),
+    admin
+      .from('channels')
+      .select('id, tenant_id, status, display_name, external_account_id, updated_at, tenants(name, slug)', { count: 'exact' })
+      .eq('type', 'whatsapp')
+      .order('updated_at', { ascending: false })
+      .range((page - 1) * pageSize, page * pageSize - 1),
     admin.from('whatsapp_outbound_queue').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
   ]);
 
@@ -41,6 +48,9 @@ export const GET = withPlatformAdminAuth(async (_req: NextRequest) => {
       externalAccountId: c.external_account_id,
       updatedAt: c.updated_at,
     })),
+    tenantChannelsTotal: channelsTotal || 0,
+    page,
+    pageSize,
     outboundQueuePending: queuePending || 0,
   });
 }, { roles: ['super_admin', 'auditor'] });

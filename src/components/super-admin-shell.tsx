@@ -58,7 +58,7 @@ export default function SuperAdminShell({ email, children }: { email: string; ch
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     document.cookie = 'sb-access-token=; path=/; max-age=0; SameSite=Lax; secure';
-    router.push('/super-admin/login');
+    router.push('/login');
   };
 
   return (

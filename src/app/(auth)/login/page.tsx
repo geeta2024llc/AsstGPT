@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Sparkles, Lock, Mail, ArrowRight, ShieldCheck, AlertCircle, Eye, EyeOff } from 'lucide-react';
@@ -9,12 +9,23 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get('redirectTo') || '/inbox';
+  const isUnassigned = searchParams.get('unassigned') === '1';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    isUnassigned
+      ? 'Your account is not assigned to any workspace yet. Please create a workspace or ask an administrator to invite you.'
+      : null
+  );
+
+  useEffect(() => {
+    if (isUnassigned) {
+      setError('Your account is not assigned to any workspace yet. Please create a workspace or ask an administrator to invite you.');
+    }
+  }, [isUnassigned]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,7 +34,7 @@ function LoginForm() {
 
     try {
       const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim().toLowerCase(),
         password,
       });
 
@@ -35,25 +46,58 @@ function LoginForm() {
         // Set session cookie for middleware
         document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=604800; SameSite=Lax; secure`;
 
-        // Smart routing: check if this is a platform super admin
-        if (!searchParams.get('redirectTo')) {
-          try {
-            const meRes = await fetch('/api/super-admin/me', {
-              headers: { Authorization: `Bearer ${data.session.access_token}` },
-            });
-            if (meRes.ok) {
-              const meData = await meRes.json();
-              if (meData?.platformRole) {
-                router.push('/super-admin');
+        // 1. Smart role detection: Check if this user is a platform super admin
+        try {
+          const meRes = await fetch('/api/super-admin/me', {
+            headers: { Authorization: `Bearer ${data.session.access_token}` },
+          });
+          if (meRes.ok) {
+            const meData = await meRes.json();
+            if (meData?.platformRole) {
+              router.push('/super-admin');
+              return;
+            }
+          }
+        } catch (_) {
+          // Continue to workspace routing check
+        }
+
+        // 2. Check if user already has an active workspace claim in JWT
+        const userAppMeta = data.user?.app_metadata;
+        const tenantId = userAppMeta?.tenant_id;
+
+        if (tenantId) {
+          router.push(redirectTo);
+          return;
+        }
+
+        // 3. If no active workspace claim in token, check if user has memberships via /api/tenant/switch
+        try {
+          const wsRes = await fetch('/api/tenant/switch', {
+            headers: { Authorization: `Bearer ${data.session.access_token}` },
+          });
+          if (wsRes.ok) {
+            const wsData = await wsRes.json();
+            if (wsData?.workspaces && wsData.workspaces.length > 0) {
+              // Auto-activate the first accessible workspace
+              const switchRes = await fetch('/api/tenant/switch', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${data.session.access_token}`,
+                },
+                body: JSON.stringify({ targetTenantId: wsData.workspaces[0].tenantId }),
+              });
+              if (switchRes.ok) {
+                router.push(redirectTo);
                 return;
               }
             }
-          } catch (_) {
-            // fallback to default redirect
           }
-        }
+        } catch (_) {}
 
-        router.push(redirectTo);
+        // 4. Authenticated user with no workspace and not a super admin
+        setError('Your account is authenticated but not assigned to any workspace yet. Please create a new workspace below.');
       }
     } catch (err: any) {
       console.error('Login error:', err);
@@ -83,7 +127,7 @@ function LoginForm() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="operator@company.com"
+            placeholder="name@company.com"
             className="w-full pl-10 pr-4 py-2.5 bg-slate-950/60 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
           />
         </div>
@@ -154,16 +198,8 @@ export default function LoginPage() {
 
         {/* Glassmorphic Login Card */}
         <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-7 shadow-2xl shadow-black/60">
-          <div className="flex items-center justify-between gap-2 mb-6">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-wider font-semibold text-emerald-400">
-              <ShieldCheck className="w-4 h-4" /> Secure Operator Access
-            </div>
-            <a
-              href="/super-admin/login"
-              className="text-[11px] font-semibold text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1"
-            >
-              Super Admin &rarr;
-            </a>
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wider font-semibold text-emerald-400 mb-6">
+            <ShieldCheck className="w-4 h-4" /> Secure Access
           </div>
 
           <Suspense fallback={<div className="py-8 text-center text-xs text-slate-500">Loading sign in...</div>}>

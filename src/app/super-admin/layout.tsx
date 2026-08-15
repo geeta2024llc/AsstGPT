@@ -1,6 +1,6 @@
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { getSupabaseAdmin } from '@/lib/supabase';
+import { getPlatformAdminRecord } from '@/lib/platform-admin-guard';
 import SuperAdminShell from '@/components/super-admin-shell';
 
 /**
@@ -11,21 +11,16 @@ import SuperAdminShell from '@/components/super-admin-shell';
 export default async function SuperAdminLayout({ children }: { children: React.ReactNode }) {
   const headerList = await headers();
   const email = headerList.get('x-user-email');
+  const userId = headerList.get('x-user-id') || undefined;
 
   if (!email) {
     redirect('/login');
   }
 
-  const admin = getSupabaseAdmin();
-  const { data } = await admin
-    .from('platform_admins')
-    .select('platform_role, revoked_at')
-    .eq('email', email.toLowerCase())
-    .is('revoked_at', null)
-    .maybeSingle();
+  const data = await getPlatformAdminRecord(email, userId);
 
   if (!data) {
-    redirect('/dashboard');
+    redirect('/login');
   }
 
   return <SuperAdminShell email={email}>{children}</SuperAdminShell>;
