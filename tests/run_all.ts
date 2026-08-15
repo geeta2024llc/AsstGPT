@@ -18,6 +18,9 @@ import { runMultiTenantRBACTestSuite } from './suites/multitenant_rbac.test';
 import { runAIFailureAndTakeoverRaceTestSuite } from './suites/ai_failure_and_takeover_races.test';
 import { runAdversarialSecurityAudit } from './suites/adversarial_multitenant_security.test';
 import { runRailwayAndMultiReplicaTestSuite } from './suites/railway_multi_replica_resilience.test';
+import { runContactDedupAndJidReconciliationTestSuite } from './suites/contact_dedup_and_jid_reconciliation.test';
+import { runHandoffSummaryAndReEngagementTests } from './suites/handoff_summary_and_reengagement.test';
+import { runAgentsDesignerSandboxTestSuite } from './suites/agents_designer_sandbox.test';
 
 interface SuiteResult {
   name: string;
@@ -50,6 +53,9 @@ async function runMasterTestSuite() {
     { name: 'AI Failure Resilience & Takeover Races', runner: runAIFailureAndTakeoverRaceTestSuite },
     { name: 'Adversarial Multi-Tenant Security Audit', runner: runAdversarialSecurityAudit },
     { name: 'Railway Persistence & Multi-Replica Failover', runner: runRailwayAndMultiReplicaTestSuite },
+    { name: 'Contact Dedup & JID Reconciliation', runner: runContactDedupAndJidReconciliationTestSuite },
+    { name: 'Hand-Off Summary & Re-Engagement', runner: runHandoffSummaryAndReEngagementTests },
+    { name: 'Agents Designer & Live Sandbox', runner: runAgentsDesignerSandboxTestSuite },
   ];
 
   const results: SuiteResult[] = [];

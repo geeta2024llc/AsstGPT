@@ -4,7 +4,7 @@ if (typeof window !== 'undefined') {
 
 import { getSupabaseAdmin } from './supabase';
 import { getRequestContext } from './request-context';
-import type { Conversation, Message, Agent, Stats, KnowledgeFile, LogEntry, TeamMember, HandoffRule, CannedResponse, ConversationNote, ContactProfile, LeadStage, WebhookConfig, WebhookEventType, WebhookPayload, SLAMetrics, SentimentType, WidgetConfig } from '@/types';
+import type { Conversation, Message, Agent, Stats, KnowledgeFile, LogEntry, TeamMember, HandoffRule, CannedResponse, ConversationNote, ContactProfile, LeadStage, WebhookConfig, WebhookEventType, WebhookPayload, SLAMetrics, SentimentType, WidgetConfig, ReEngagementConfig } from '@/types';
 
 function getDefaultTenantId(): string {
   const tenantId = process.env.DEFAULT_TENANT_ID;
@@ -20,7 +20,7 @@ function getDefaultTenantId(): string {
  */
 const tenantChannelCache = new Map<string, string>();
 
-async function ensureDefaultTenantAndChannel(explicitTenantId?: string): Promise<{ tenantId: string; channelId: string }> {
+export async function ensureDefaultTenantAndChannel(explicitTenantId?: string): Promise<{ tenantId: string; channelId: string }> {
   const ctx = getRequestContext();
   const tenantId = explicitTenantId || ctx?.tenantId || getDefaultTenantId();
 
@@ -145,7 +145,11 @@ export async function getConversations(options?: { limit?: number; offset?: numb
 
     for (const c of convosData) {
       const contact = c.contacts as any;
-      const rawExtId = contact?.contact_channels?.[0]?.external_id || contact?.name || c.id;
+      const channels: any[] = contact?.contact_channels || [];
+
+      // Find primary phone-based channel first, fallback to first channel, then contact name or convo id
+      const phoneChannel = channels.find((ch: any) => ch.external_id?.endsWith('@s.whatsapp.net'));
+      const rawExtId = phoneChannel?.external_id || channels[0]?.external_id || contact?.name || c.id;
 
       // Skip internal WhatsApp system broadcasts and newsletter channels
       if (
@@ -188,9 +192,11 @@ export async function getConversations(options?: { limit?: number; offset?: numb
         resolutionDurationMs: c.resolution_duration_ms || undefined,
       };
 
-      const existing = conversationsMap.get(externalId);
+      // Deduplicate by contactId if present, otherwise by externalId
+      const dedupKey = contact?.id ? `contact_${contact.id}` : externalId;
+      const existing = conversationsMap.get(dedupKey);
       if (!existing || convoObj.lastMessage.timestamp > existing.lastMessage.timestamp) {
-        conversationsMap.set(externalId, convoObj);
+        conversationsMap.set(dedupKey, convoObj);
       }
     }
 
@@ -742,6 +748,8 @@ export async function addAgent(agent: Omit<Agent, 'id' | 'mode'> & Partial<Pick<
   return created;
 }
 
+export const createAgent = addAgent;
+
 export async function updateAgent(id: string, update: Partial<Omit<Agent, 'id'>>) {
   try {
     const supabase = getSupabaseAdmin();
@@ -798,8 +806,11 @@ export async function updateAgent(id: string, update: Partial<Omit<Agent, 'id'>>
         await supabase.from('agent_knowledge_sources').insert(knowledgeInserts);
       }
     }
+
+    return await getAgent(id);
   } catch (err) {
     console.error('Error in updateAgent:', err);
+    return undefined;
   }
 }
 
@@ -1011,6 +1022,70 @@ export async function getLogs(): Promise<LogEntry[]> {
   } catch (err) {
     console.error('Error in getLogs:', err);
     return [];
+  }
+}
+
+export async function getPaginatedLogs(options?: {
+  page?: number;
+  pageSize?: number;
+  type?: string;
+  search?: string;
+}): Promise<{ logs: LogEntry[]; total: number; page: number; pageSize: number; totalPages: number }> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { tenantId } = await ensureDefaultTenantAndChannel();
+
+    const page = Math.max(1, options?.page || 1);
+    const pageSize = Math.max(1, Math.min(100, options?.pageSize || 10));
+    const offset = (page - 1) * pageSize;
+
+    let query = supabase
+      .from('audit_logs')
+      .select('id, user_name, action, details, log_type, created_at', { count: 'exact' })
+      .eq('tenant_id', tenantId);
+
+    if (options?.type && options.type !== 'all') {
+      query = query.eq('log_type', options.type);
+    }
+
+    if (options?.search && options.search.trim()) {
+      const s = options.search.trim();
+      query = query.or(`action.ilike.%${s}%,details.ilike.%${s}%,user_name.ilike.%${s}%`);
+    }
+
+    query = query
+      .order('created_at', { ascending: false })
+      .range(offset, offset + pageSize - 1);
+
+    const { data: logsData, error, count } = await query;
+
+    if (error) {
+      console.error('Failed to fetch paginated audit logs from Supabase:', error);
+      return { logs: [], total: 0, page, pageSize, totalPages: 0 };
+    }
+
+    const total = count || 0;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+
+    const logs: LogEntry[] = (logsData || []).map((l: any) => ({
+      id: l.id,
+      timestamp: new Date(l.created_at).getTime(),
+      user: l.user_name,
+      action: l.action,
+      details: l.details,
+      type: l.log_type as any,
+    }));
+
+    return {
+      logs,
+      total,
+      page,
+      pageSize,
+      totalPages,
+    };
+  } catch (err) {
+    console.error('Error in getPaginatedLogs:', err);
+    return { logs: [], total: 0, page: 1, pageSize: 10, totalPages: 0 };
   }
 }
 
@@ -2258,6 +2333,195 @@ export async function updateWidgetConfig(config: Partial<WidgetConfig>): Promise
   }
 
   return updated;
+}
+
+/**
+ * Executes stored procedure to merge existing duplicate ghost contacts within the current tenant.
+ */
+export async function mergeDuplicateContacts(): Promise<{ success: boolean; mergedGroups: number }> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { tenantId } = await ensureDefaultTenantAndChannel();
+    const { data, error } = await supabase.rpc('merge_duplicate_contacts_atomic', {
+      p_tenant_id: tenantId,
+    });
+    if (error) {
+      console.error('Error running merge_duplicate_contacts_atomic:', error);
+      return { success: false, mergedGroups: 0 };
+    }
+    return { success: true, mergedGroups: data?.merged_groups || 0 };
+  } catch (err) {
+    console.error('Error in mergeDuplicateContacts:', err);
+    return { success: false, mergedGroups: 0 };
+  }
+}
+
+/**
+ * Manually merges a specific duplicate contact (identified by its chat/JID) into a target
+ * contact identified by another chat/JID or a phone number. Used as the fallback for @lid-based
+ * contacts, which cannot be reconciled automatically since Baileys has no LID->phone resolution API.
+ */
+export async function mergeContactByChatId(
+  sourceChatId: string,
+  targetIdentifier: string
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { tenantId } = await ensureDefaultTenantAndChannel();
+
+    const { data: sourceChannel } = await supabase
+      .from('contact_channels')
+      .select('contact_id')
+      .eq('tenant_id', tenantId)
+      .eq('external_id', sourceChatId)
+      .maybeSingle();
+
+    if (!sourceChannel?.contact_id) {
+      return { success: false, message: `No contact found for "${sourceChatId}".` };
+    }
+
+    let targetContactId: string | undefined;
+
+    if (targetIdentifier.includes('@')) {
+      const { data: targetChannel } = await supabase
+        .from('contact_channels')
+        .select('contact_id')
+        .eq('tenant_id', tenantId)
+        .eq('external_id', targetIdentifier)
+        .maybeSingle();
+      targetContactId = targetChannel?.contact_id;
+    } else {
+      const normalizedPhone = targetIdentifier.replace(/[^0-9]/g, '');
+      const { data: targetChannel } = await supabase
+        .from('contact_channels')
+        .select('contact_id')
+        .eq('tenant_id', tenantId)
+        .eq('phone_number', normalizedPhone)
+        .maybeSingle();
+      targetContactId = targetChannel?.contact_id;
+    }
+
+    if (!targetContactId) {
+      return { success: false, message: `No contact found for "${targetIdentifier}".` };
+    }
+
+    if (targetContactId === sourceChannel.contact_id) {
+      return { success: false, message: 'Source and target already resolve to the same contact.' };
+    }
+
+    const { data, error } = await supabase.rpc('merge_two_contacts_atomic', {
+      p_tenant_id: tenantId,
+      p_primary_contact_id: targetContactId,
+      p_duplicate_contact_id: sourceChannel.contact_id,
+    });
+
+    if (error || !data?.success) {
+      console.error('Error running merge_two_contacts_atomic:', error || data?.error);
+      return { success: false, message: data?.error || error?.message || 'Merge failed.' };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('Error in mergeContactByChatId:', err);
+    return { success: false, message: err.message || 'Merge failed.' };
+  }
+}
+
+// --- Proactive Re-Engagement & Auto Follow-Up ---
+
+export const DEFAULT_REENGAGEMENT_CONFIG: ReEngagementConfig = {
+  isEnabled: false,
+  inactivityHoursThreshold: 24,
+  maxFollowUpsPerConversation: 1,
+  followUpMessageTemplate: 'Hi {{name}}, just checking in to see if you needed any further assistance with your inquiry?',
+  onlyUnresolved: true,
+  aiGeneratedContextual: true,
+  scanIntervalMinutes: 60,
+};
+
+export async function getReEngagementConfig(): Promise<ReEngagementConfig> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { tenantId } = await ensureDefaultTenantAndChannel();
+
+    const { data: tenant, error } = await supabase
+      .from('tenants')
+      .select('widget_settings')
+      .eq('id', tenantId)
+      .maybeSingle();
+
+    if (error || !tenant?.widget_settings?.re_engagement) {
+      return DEFAULT_REENGAGEMENT_CONFIG;
+    }
+
+    return {
+      ...DEFAULT_REENGAGEMENT_CONFIG,
+      ...tenant.widget_settings.re_engagement,
+    };
+  } catch (err) {
+    console.error('Error in getReEngagementConfig:', err);
+    return DEFAULT_REENGAGEMENT_CONFIG;
+  }
+}
+
+export async function updateReEngagementConfig(config: Partial<ReEngagementConfig>): Promise<ReEngagementConfig> {
+  const supabase = getSupabaseAdmin();
+  const { tenantId } = await ensureDefaultTenantAndChannel();
+
+  const current = await getReEngagementConfig();
+  const updated: ReEngagementConfig = {
+    ...current,
+    ...config,
+  };
+
+  const { data: tenant } = await supabase
+    .from('tenants')
+    .select('widget_settings')
+    .eq('id', tenantId)
+    .maybeSingle();
+
+  const currentSettings = tenant?.widget_settings || {};
+  const newSettings = {
+    ...currentSettings,
+    re_engagement: updated,
+  };
+
+  const { error } = await supabase
+    .from('tenants')
+    .update({ widget_settings: newSettings })
+    .eq('id', tenantId);
+
+  if (error) {
+    console.error('Failed to update re_engagement settings in Supabase:', error);
+    throw error;
+  }
+
+  return updated;
+}
+
+/**
+ * Finds open conversations where the last message was sent earlier than the threshold
+ * and re-engagement hasn't exceeded the max follow-ups.
+ */
+export async function getStaleConversationsForReEngagement(
+  inactivityHours = 24,
+  maxFollowUps = 1
+): Promise<Conversation[]> {
+  try {
+    const allConvos = await getConversations();
+    const thresholdMs = Date.now() - (inactivityHours * 60 * 60 * 1000);
+
+    return allConvos.filter((c) => {
+      if (c.status === 'resolved') return false;
+      const count = c.reEngagementCount || (c.handoffMetadata?.reEngagementCount as number) || 0;
+      if (count >= maxFollowUps) return false;
+      const lastTime = c.lastMessage.timestamp;
+      return lastTime < thresholdMs;
+    });
+  } catch (err) {
+    console.error('Error in getStaleConversationsForReEngagement:', err);
+    return [];
+  }
 }
 
 

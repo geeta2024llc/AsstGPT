@@ -29,7 +29,12 @@ export async function register() {
         startLeaderElection();
         console.log('[INSTRUMENTATION] WhatsApp distributed leader election active.');
 
-        // 3. Register graceful shutdown hooks
+        // 3. Start background proactive re-engagement scheduler (leader-gated)
+        const { startReEngagementScheduler } = await import('@/lib/re-engagement-engine');
+        startReEngagementScheduler();
+        console.log('[INSTRUMENTATION] Proactive re-engagement scheduler active.');
+
+        // 4. Register graceful shutdown hooks
         const handleShutdown = async (signal: string) => {
           console.log(`[INSTRUMENTATION] Received ${signal}. Starting graceful shutdown & lease release...`);
           try {

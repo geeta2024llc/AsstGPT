@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { timingSafeCompare } from '@/lib/security-utils';
 
 // Public endpoints accessible without authentication
 const PUBLIC_PATHS = [
@@ -13,7 +14,7 @@ const PUBLIC_PATHS = [
   '/assets',
 ];
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // 1. Allow public static assets and auth endpoints
@@ -21,14 +22,19 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const authRequired = process.env.AUTH_REQUIRED === 'true';
+  // Secure-by-default: fail closed unless explicitly set to 'false' in local development
+  const authDisabled = process.env.AUTH_REQUIRED === 'false';
   const defaultTenantId = process.env.DEFAULT_TENANT_ID || '00000000-0000-0000-0000-000000000001';
   const configuredSecret = process.env.API_SECRET_KEY;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 
-  // Extract credentials
+  // Extract credentials from headers or cookies
   const authHeader = request.headers.get('authorization');
   const apiKeyHeader = request.headers.get('x-api-key');
-  const sessionCookie = request.cookies.get('sb-access-token')?.value || request.cookies.get('supabase-auth-token')?.value;
+  const sessionCookie =
+    request.cookies.get('sb-access-token')?.value ||
+    request.cookies.get('supabase-auth-token')?.value;
 
   let token: string | undefined = apiKeyHeader || undefined;
   if (!token && authHeader?.startsWith('Bearer ')) {
@@ -42,35 +48,50 @@ export function middleware(request: NextRequest) {
   let resolvedUserRole = 'admin';
   let isAuthenticated = false;
 
-  // Verify token
+  // 2. Cryptographic Token Verification
   if (token) {
-    if (configuredSecret && token === configuredSecret) {
+    // A. Check against configured system API secret (timing-safe)
+    if (configuredSecret && timingSafeCompare(token, configuredSecret)) {
       isAuthenticated = true;
       resolvedUserRole = 'admin';
-    } else {
-      // Decode JWT payload if valid format
+      resolvedTenantId = request.headers.get('x-tenant-id') || defaultTenantId;
+    } else if (supabaseUrl && supabaseAnonKey && !token.includes('placeholder')) {
+      // B. Cryptographically verify Supabase User JWT against Supabase Auth API
       try {
-        const parts = token.split('.');
-        if (parts.length === 3) {
-          const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
-          if (payload.exp && payload.exp * 1000 > Date.now()) {
+        const authRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            apikey: supabaseAnonKey,
+          },
+          signal: AbortSignal.timeout(3500),
+        });
+
+        if (authRes.ok) {
+          const user = await authRes.json();
+          if (user?.id) {
             isAuthenticated = true;
-            resolvedUserId = payload.sub || resolvedUserId;
-            resolvedTenantId = payload.app_metadata?.tenant_id || payload.user_metadata?.tenant_id || defaultTenantId;
-            resolvedUserRole = payload.app_metadata?.role || payload.user_metadata?.role || 'operator';
+            resolvedUserId = user.id;
+            resolvedTenantId =
+              user.app_metadata?.tenant_id ||
+              user.user_metadata?.tenant_id ||
+              defaultTenantId;
+            resolvedUserRole =
+              user.app_metadata?.role ||
+              user.user_metadata?.role ||
+              'operator';
           }
         }
       } catch (_) {
-        // Invalid JWT structure
+        // Network timeout or unverified token
       }
     }
   }
 
-  // If AUTH_REQUIRED is active, reject unauthenticated access
-  if (authRequired && !isAuthenticated) {
+  // 3. If authentication is not disabled and user is unauthenticated, reject access
+  if (!authDisabled && !isAuthenticated) {
     if (pathname.startsWith('/api/')) {
       return NextResponse.json(
-        { error: 'Unauthorized: Authentication required' },
+        { error: 'Unauthorized: Valid cryptographic authentication token required' },
         { status: 401 }
       );
     }
@@ -79,12 +100,12 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Forward resolved context via headers to downstream handlers
+  // 4. Forward verified claims downstream to API route handlers and Server Components
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-tenant-id', resolvedTenantId);
   requestHeaders.set('x-user-id', resolvedUserId);
   requestHeaders.set('x-user-role', resolvedUserRole);
-  if (token) {
+  if (token && isAuthenticated) {
     requestHeaders.set('authorization', `Bearer ${token}`);
   }
 
@@ -98,7 +119,7 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
+     * Match all request paths except for:
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)

@@ -6,6 +6,7 @@ import { findDirectFaqMatch, dynamicResponseCache } from '@/lib/faq-matcher';
 import { evaluateHandoffRules } from '@/lib/handoff-engine';
 import { dispatchWebhookEvent } from '@/lib/webhook-dispatcher';
 import { analyzeMessageSentiment } from '@/lib/ai-insights';
+import { verifyWidgetSession, signWidgetSession } from '@/lib/security-utils';
 import type { Message, Agent } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -14,18 +15,32 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get('sessionId');
+    const token = request.headers.get('x-widget-token') || searchParams.get('token');
 
     if (!sessionId) {
       return NextResponse.json({ message: 'Missing sessionId parameter' }, { status: 400 });
     }
 
+    const { tenantId } = await db.ensureDefaultTenantAndChannel();
+
+    // Verify session HMAC token
+    if (!token || !verifyWidgetSession(sessionId, tenantId, token)) {
+      return NextResponse.json(
+        { message: 'Forbidden: Invalid or forged widget session token' },
+        { status: 403 }
+      );
+    }
+
     const chatId = sessionId.includes('@') ? sessionId : `${sessionId}@webchat`;
     const messages = await db.getMessages(chatId);
+
+    const validToken = token || signWidgetSession(sessionId, tenantId);
 
     return NextResponse.json(messages, {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'X-Widget-Token': validToken,
       },
     });
   } catch (error) {
@@ -37,10 +52,21 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { sessionId, text, visitorName } = body;
+    const { sessionId, text, visitorName, token } = body;
+    const headerToken = request.headers.get('x-widget-token');
+    const providedToken = token || headerToken;
 
     if (!sessionId || !text || typeof text !== 'string') {
       return NextResponse.json({ message: 'sessionId and text are required' }, { status: 400 });
+    }
+
+    const { tenantId } = await db.ensureDefaultTenantAndChannel();
+
+    if (!providedToken || !verifyWidgetSession(sessionId, tenantId, providedToken)) {
+      return NextResponse.json(
+        { message: 'Forbidden: Invalid or forged widget session token' },
+        { status: 403 }
+      );
     }
 
     const cleanText = text.trim();

@@ -7,6 +7,7 @@ import makeWASocket, {
   type WASocket,
   type WAMessage,
   isJidGroup,
+  jidNormalizedUser,
   downloadMediaMessage,
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
@@ -127,7 +128,8 @@ async function handleMessage(msg: WAMessage) {
       return;
     }
 
-    const chatId = msg.key.remoteJid;
+    const rawJid = msg.key.remoteJid;
+    const chatId = jidNormalizedUser(rawJid);
     const providerMessageId = msg.key.id;
     if (!providerMessageId) return;
 

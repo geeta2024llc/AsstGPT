@@ -1,6 +1,8 @@
 import 'dotenv/config';
+import { NextRequest } from 'next/server';
 import { getSupabaseAdmin } from '../../src/lib/supabase';
 import { runWithRequestContext } from '../../src/lib/request-context';
+import { withApiAuth } from '../../src/lib/api-guard';
 
 export async function runMultiTenantRBACTestSuite(): Promise<boolean> {
   console.log('============================================================');
@@ -88,32 +90,39 @@ export async function runMultiTenantRBACTestSuite(): Promise<boolean> {
     allPassed = false;
   }
 
-  // 3. Test RBAC Permission Boundaries
-  console.log('\n3. Testing RBAC Role Permissions...');
+  // 3. Test Real withApiAuth Route Guard RBAC Permissions
+  console.log('\n3. Testing Real withApiAuth Route Guard RBAC Permissions...');
   try {
-    const roles = [
-      { role: 'admin', canManageTeam: true, canPurgeLogs: true, canReplyMessages: true },
-      { role: 'operator', canManageTeam: false, canPurgeLogs: false, canReplyMessages: true },
-      { role: 'viewer', canManageTeam: false, canPurgeLogs: false, canReplyMessages: false },
+    const adminEndpoint = withApiAuth(async () => {
+      return new Response(JSON.stringify({ ok: true }), { status: 200 }) as any;
+    }, { roles: ['admin'] });
+
+    const operatorEndpoint = withApiAuth(async () => {
+      return new Response(JSON.stringify({ ok: true }), { status: 200 }) as any;
+    }, { roles: ['admin', 'operator'] });
+
+    const rolesToTest = [
+      { role: 'admin', expectAdminStatus: 200, expectOperatorStatus: 200 },
+      { role: 'operator', expectAdminStatus: 403, expectOperatorStatus: 200 },
+      { role: 'viewer', expectAdminStatus: 403, expectOperatorStatus: 403 },
     ];
 
-    for (const r of roles) {
-      const allowedActions: string[] = [];
-      if (r.canReplyMessages) allowedActions.push('reply');
-      if (r.canManageTeam) allowedActions.push('team_manage');
-      if (r.canPurgeLogs) allowedActions.push('audit_purge');
+    for (const item of rolesToTest) {
+      const req = new NextRequest('http://localhost:3000/api/test', {
+        headers: {
+          'x-tenant-id': TENANT_A,
+          'x-user-role': item.role,
+        },
+      });
 
-      const isPermitted = (action: string) => {
-        if (r.role === 'admin') return true;
-        if (r.role === 'operator') return action === 'reply';
-        return false;
-      };
+      const resAdmin = await adminEndpoint(req);
+      const resOp = await operatorEndpoint(req);
 
-      const adminPermCheck = isPermitted('team_manage') === r.canManageTeam;
-      const replyPermCheck = isPermitted('reply') === r.canReplyMessages;
+      const adminOk = resAdmin.status === item.expectAdminStatus;
+      const opOk = resOp.status === item.expectOperatorStatus;
 
-      console.log(`   - Role [${r.role.toUpperCase()}]: Team Manage = ${isPermitted('team_manage')}, Reply = ${isPermitted('reply')} -> ${adminPermCheck && replyPermCheck ? '✅ PASS' : '❌ FAIL'}`);
-      if (!adminPermCheck || !replyPermCheck) allPassed = false;
+      console.log(`   - Role [${item.role.toUpperCase()}]: Admin Route Status = ${resAdmin.status} (Exp ${item.expectAdminStatus}), Operator Route Status = ${resOp.status} (Exp ${item.expectOperatorStatus}) -> ${adminOk && opOk ? '✅ PASS' : '❌ FAIL'}`);
+      if (!adminOk || !opOk) allPassed = false;
     }
   } catch (err) {
     console.error('   - RBAC error:', err);

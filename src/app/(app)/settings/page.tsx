@@ -11,13 +11,15 @@ import {
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Sun, Moon, Sparkles, ShieldAlert, Sliders, MessageSquareQuote, Webhook, MessageSquare, Users } from 'lucide-react';
+import { Sun, Moon, Sparkles, ShieldAlert, Sliders, MessageSquareQuote, Webhook, MessageSquare, Users, Clock, Users2 } from 'lucide-react';
 import { useSettings } from '@/hooks/use-settings';
 import HandoffRulesManager from '@/components/handoff-rules-manager';
 import CannedResponsesManager from '@/components/canned-responses-manager';
 import WebhookManager from '@/components/webhook-manager';
 import WidgetConfigManager from '@/components/widget-config-manager';
 import TeamRBACManager from '@/components/team-rbac-manager';
+import ReEngagementManager from '@/components/re-engagement-manager';
+import ContactDedupManager from '@/components/contact-dedup-manager';
 
 export default function SettingsPage() {
   const { resolvedTheme, setTheme } = useTheme();
@@ -28,15 +30,23 @@ export default function SettingsPage() {
       <div>
         <h1 className="font-headline text-3xl font-bold">Settings & Integrations</h1>
         <p className="text-muted-foreground mt-1">
-          Manage system preferences, AI agent behavior, team roles (RBAC), quick replies, live chat widget, outbound webhooks, and automated human handoff rules.
+          Manage system preferences, AI agent behavior, team roles (RBAC), quick replies, live chat widget, outbound webhooks, proactive re-engagement, and automated human handoff rules.
         </p>
       </div>
 
       <Tabs defaultValue="handoff" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-6 max-w-4xl">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-8 max-w-5xl">
           <TabsTrigger value="handoff" className="flex items-center gap-1.5 text-xs">
             <ShieldAlert className="h-3.5 w-3.5" />
             <span>Handoff</span>
+          </TabsTrigger>
+          <TabsTrigger value="reengagement" className="flex items-center gap-1.5 text-xs">
+            <Clock className="h-3.5 w-3.5" />
+            <span>Re-engage</span>
+          </TabsTrigger>
+          <TabsTrigger value="dedup" className="flex items-center gap-1.5 text-xs">
+            <Users2 className="h-3.5 w-3.5" />
+            <span>Data Cleanup</span>
           </TabsTrigger>
           <TabsTrigger value="team" className="flex items-center gap-1.5 text-xs">
             <Users className="h-3.5 w-3.5" />
@@ -63,6 +73,16 @@ export default function SettingsPage() {
         {/* Tab 1: Automated Handoff & Routing Rules */}
         <TabsContent value="handoff" className="space-y-6">
           <HandoffRulesManager />
+        </TabsContent>
+
+        {/* Tab 2: Proactive Customer Re-Engagement */}
+        <TabsContent value="reengagement" className="space-y-6">
+          <ReEngagementManager />
+        </TabsContent>
+
+        {/* Tab 2b: Duplicate Contact Cleanup */}
+        <TabsContent value="dedup" className="space-y-6">
+          <ContactDedupManager />
         </TabsContent>
 
         {/* Tab 2: Team Members & RBAC */}

@@ -612,6 +612,8 @@ export default function InboxLayout() {
 
   const isSelectedConvoResolved = selectedConversation?.status === 'resolved';
 
+  const totalUnreadConvos = conversations.reduce((acc, c) => acc + (c.unreadCount > 0 ? 1 : 0), 0);
+
   return (
     <div className="relative flex h-[calc(100vh-theme(spacing.36))] rounded-xl border bg-card shadow-sm overflow-hidden">
       {/* Sidebar: Conversation List */}
@@ -625,9 +627,14 @@ export default function InboxLayout() {
           <div className="flex items-center justify-between gap-2">
             <h2 className="font-headline text-lg font-semibold flex items-center gap-1.5">
               <span>Inbox</span>
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4" title={`${filteredConversations.length} conversations in view`}>
                 {filteredConversations.length}
               </Badge>
+              {totalUnreadConvos > 0 && (
+                <Badge variant="default" className="text-[10px] px-1.5 py-0 h-4 bg-primary text-primary-foreground font-bold" title={`${totalUnreadConvos} unread conversations`}>
+                  {totalUnreadConvos} unread
+                </Badge>
+              )}
               <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 ml-1 font-normal">
                 <Radio className="h-2.5 w-2.5 animate-pulse" />
                 <span>Live</span>
@@ -934,24 +941,62 @@ export default function InboxLayout() {
                 </div>
               </div>
 
-              {/* Live Escalation Banner */}
+              {/* Live Escalation Banner with AI Catch-Up Briefing */}
               {isSelectedConvoPaused && !isSelectedConvoResolved && (
-                <div className="bg-amber-500/10 border-t border-amber-500/20 px-3 py-1.5 flex items-center justify-between text-xs text-amber-800 dark:text-amber-300">
-                  <div className="flex items-center gap-1.5 truncate">
-                    <ShieldAlert className="h-4 w-4 text-amber-500 shrink-0" />
-                    <span className="font-semibold shrink-0">Live Takeover Active:</span>
-                    <span className="truncate opacity-90">
-                      {selectedConversation.handoffReason || 'AI auto-reply is paused for this customer.'}
-                    </span>
+                <div className="bg-amber-500/10 border-t border-amber-500/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <ShieldAlert className="h-4 w-4 text-amber-500 shrink-0" />
+                      <span className="font-semibold shrink-0">Live Takeover Active:</span>
+                      <span className="truncate opacity-90">
+                        {selectedConversation.handoffReason || 'AI auto-reply is paused for this customer.'}
+                      </span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-[11px] px-2 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 shrink-0 ml-2"
+                      onClick={() => handleToggleTakeover(selectedConversation.id, 'ai')}
+                    >
+                      Resume Bot
+                    </Button>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 text-[11px] px-2 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 shrink-0 ml-2"
-                    onClick={() => handleToggleTakeover(selectedConversation.id, 'ai')}
-                  >
-                    Resume Bot
-                  </Button>
+
+                  {/* AI Catch-Up Briefing Card */}
+                  {(selectedConversation.handoffMetadata?.takeoverBriefing || selectedConversation.takeoverBriefing) && (
+                    <div className="bg-background/80 border border-amber-500/30 rounded-md p-2.5 space-y-1 text-[11px] text-foreground shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 font-bold text-amber-700 dark:text-amber-400">
+                          <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                          <span>AI Hand-Off Catch-Up Briefing</span>
+                        </div>
+                        {(selectedConversation.handoffMetadata?.takeoverBriefing?.customerFrustration || selectedConversation.takeoverBriefing?.customerFrustration) && (
+                          <Badge
+                            variant="outline"
+                            className={cn('text-[9px] px-1.5 py-0 uppercase font-bold', {
+                              'bg-rose-500/10 text-rose-600 border-rose-500/30': (selectedConversation.handoffMetadata?.takeoverBriefing?.customerFrustration || selectedConversation.takeoverBriefing?.customerFrustration) === 'high',
+                              'bg-amber-500/10 text-amber-600 border-amber-500/30': (selectedConversation.handoffMetadata?.takeoverBriefing?.customerFrustration || selectedConversation.takeoverBriefing?.customerFrustration) === 'medium',
+                              'bg-emerald-500/10 text-emerald-600 border-emerald-500/30': (selectedConversation.handoffMetadata?.takeoverBriefing?.customerFrustration || selectedConversation.takeoverBriefing?.customerFrustration) === 'low',
+                            })}
+                          >
+                            Frustration: {selectedConversation.handoffMetadata?.takeoverBriefing?.customerFrustration || selectedConversation.takeoverBriefing?.customerFrustration}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-muted-foreground leading-relaxed">
+                        <strong className="text-foreground">Issue:</strong>{' '}
+                        {selectedConversation.handoffMetadata?.takeoverBriefing?.keyIssue || selectedConversation.takeoverBriefing?.keyIssue}
+                      </p>
+                      <p className="text-muted-foreground leading-relaxed">
+                        <strong className="text-foreground">Bot Attempted:</strong>{' '}
+                        {selectedConversation.handoffMetadata?.takeoverBriefing?.botAttemptsSummary || selectedConversation.takeoverBriefing?.botAttemptsSummary}
+                      </p>
+                      <p className="text-emerald-700 dark:text-emerald-400 font-medium leading-relaxed bg-emerald-500/5 px-1.5 py-0.5 rounded border border-emerald-500/10">
+                        <strong>Recommended Next Step:</strong>{' '}
+                        {selectedConversation.handoffMetadata?.takeoverBriefing?.recommendedNextAction || selectedConversation.takeoverBriefing?.recommendedNextAction}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 

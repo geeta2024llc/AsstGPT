@@ -40,6 +40,7 @@ import {
   DialogTrigger,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import type { KnowledgeFile } from '@/types';
@@ -396,22 +397,36 @@ export default function KnowledgeBaseManager() {
                       onChange={(e) => setNewTitle(e.target.value)}
                     />
                   </div>
-                  <div>
-                    <label className="text-xs font-semibold text-muted-foreground">Source Type</label>
-                    <select
-                      value={newType}
-                      onChange={(e) => setNewType(e.target.value)}
-                      className="w-full h-9 rounded-md border bg-background px-3 text-sm"
-                    >
-                      <option value="faq">FAQ / Question-Answer (Structured)</option>
-                      <option value="txt">Plain Text Document</option>
-                      <option value="url">Web Page / URL Content</option>
-                    </select>
-                  </div>
+                  <Tabs value={newType} onValueChange={setNewType} className="space-y-4">
+                    <div>
+                      <h3 className="mb-2 text-xs font-semibold text-muted-foreground">What kind of knowledge is this?</h3>
+                      <TabsList className="grid h-auto w-full grid-cols-1 gap-3 bg-transparent p-0 sm:grid-cols-2">
+                        <TabsTrigger
+                          value="faq"
+                          className="h-auto flex-col items-start gap-1.5 whitespace-normal rounded-lg border-2 bg-card p-4 text-left shadow-sm data-[state=active]:border-primary data-[state=active]:bg-primary/5 data-[state=active]:shadow-none data-[state=inactive]:border-muted"
+                        >
+                          <div className="flex items-center gap-2 font-semibold">
+                            <MessageSquare className="h-5 w-5 text-primary" /> Questions & Answers
+                          </div>
+                          <p className="text-xs font-normal text-muted-foreground">
+                            Best for FAQs like pricing, hours, or policies. Add one question and answer at a time.
+                          </p>
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="txt"
+                          className="h-auto flex-col items-start gap-1.5 whitespace-normal rounded-lg border-2 bg-card p-4 text-left shadow-sm data-[state=active]:border-primary data-[state=active]:bg-primary/5 data-[state=active]:shadow-none data-[state=inactive]:border-muted"
+                        >
+                          <div className="flex items-center gap-2 font-semibold">
+                            <FileText className="h-5 w-5" /> Write or Paste Text
+                          </div>
+                          <p className="text-xs font-normal text-muted-foreground">
+                            Type or paste any business info, policies, or notes as a block of text.
+                          </p>
+                        </TabsTrigger>
+                      </TabsList>
+                    </div>
 
-                  {/* Dynamic FAQ Question & Answer List */}
-                  {newType === 'faq' ? (
-                    <div className="space-y-4 pt-1">
+                    <TabsContent value="faq" className="space-y-4 pt-1 mt-0">
                       <div className="flex items-center justify-between">
                         <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
                           <MessageSquare className="w-3.5 h-3.5 text-primary" /> FAQ Questions & Answers
@@ -479,9 +494,9 @@ export default function KnowledgeBaseManager() {
                       >
                         <Plus className="h-4 w-4" /> Add Question & Answer
                       </Button>
-                    </div>
-                  ) : (
-                    <div>
+                    </TabsContent>
+
+                    <TabsContent value="txt" className="mt-0">
                       <label className="text-xs font-semibold text-muted-foreground">Business Facts & Knowledge Content</label>
                       <Textarea
                         placeholder="Write or paste your verified business facts, prices, contact numbers, and policies..."
@@ -489,8 +504,8 @@ export default function KnowledgeBaseManager() {
                         onChange={(e) => setNewContent(e.target.value)}
                         className="h-48 font-mono text-sm"
                       />
-                    </div>
-                  )}
+                    </TabsContent>
+                  </Tabs>
                 </div>
               </ScrollArea>
 

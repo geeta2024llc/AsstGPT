@@ -18,6 +18,7 @@ export default function StandaloneWidgetPage() {
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [sessionId, setSessionId] = useState<string>('');
+  const [sessionToken, setSessionToken] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Initialize or restore session ID from localStorage
@@ -29,23 +30,26 @@ export default function StandaloneWidgetPage() {
     }
     setSessionId(currentSession);
 
-    // Fetch widget branding config
-    fetch('/api/widget/config')
+    // Fetch widget branding config + signed session token
+    fetch(`/api/widget/config?sessionId=${encodeURIComponent(currentSession)}`)
       .then(res => res.json())
       .then(data => {
         if (data && data.title) {
           setConfig(data);
         }
-      })
-      .catch(() => {});
-
-    // Fetch existing messages
-    fetch(`/api/widget/messages?sessionId=${encodeURIComponent(currentSession)}`)
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data) && data.length > 0) {
-          setMessages(data);
+        if (data?.sessionToken) {
+          setSessionToken(data.sessionToken);
         }
+
+        // Fetch existing messages once the session token is available
+        fetch(`/api/widget/messages?sessionId=${encodeURIComponent(currentSession!)}&token=${encodeURIComponent(data?.sessionToken || '')}`)
+          .then(res => res.json())
+          .then(msgData => {
+            if (Array.isArray(msgData) && msgData.length > 0) {
+              setMessages(msgData);
+            }
+          })
+          .catch(() => {});
       })
       .catch(() => {});
   }, []);
@@ -86,6 +90,7 @@ export default function StandaloneWidgetPage() {
           sessionId,
           text,
           visitorName: 'Website Visitor',
+          token: sessionToken,
         }),
       });
 

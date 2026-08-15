@@ -10,6 +10,7 @@ const LEASE_DURATION_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 10_000;
 
 let isLeader = false;
+let currentTerm = 1;
 let electionTimer: NodeJS.Timeout | null = null;
 let queueProcessing = false;
 
@@ -21,72 +22,127 @@ export function isCurrentReplicaLeader(): boolean {
   return isLeader;
 }
 
+export function getCurrentLeadershipTerm(): number {
+  return currentTerm;
+}
+
 /**
- * Attempts to claim or renew leadership for the WhatsApp session socket via lease-table CAS.
+ * Confirms with the database that this replica still holds the current leadership term
+ * before it bypasses the queue to send a message directly. Closes the race window where
+ * an in-memory `isLeader` flag could be stale between heartbeats.
+ */
+export async function verifyActiveLeadership(channelId = 'default'): Promise<boolean> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase.rpc('verify_whatsapp_leadership_atomic', {
+      p_channel_id: channelId,
+      p_replica_id: REPLICA_ID,
+      p_expected_term: currentTerm,
+    });
+    if (error) return isLeader; // RPC not migrated yet — fall back to in-memory flag
+    return !!data;
+  } catch {
+    return isLeader;
+  }
+}
+
+/**
+ * Attempts to claim or renew leadership for the WhatsApp session socket via atomic CAS stored procedure.
  */
 export async function claimOrRenewLeadership(channelId = 'default'): Promise<boolean> {
   try {
     const supabase = getSupabaseAdmin();
-    const now = new Date();
-    const newExpiresAt = new Date(Date.now() + LEASE_DURATION_MS).toISOString();
 
-    // 1. Check current lease
-    const { data: currentLock, error: selectErr } = await supabase
-      .from('whatsapp_session_lock')
-      .select('*')
-      .eq('channel_id', channelId)
-      .maybeSingle();
+    // 1. Try atomic PostgreSQL CAS stored procedure
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('claim_or_renew_whatsapp_lease_atomic', {
+      p_channel_id: channelId,
+      p_replica_id: REPLICA_ID,
+      p_lease_duration_ms: LEASE_DURATION_MS,
+    });
 
-    if (selectErr) {
-      console.error('[LEADER ELECTION] Error checking session lock:', selectErr.message);
-      return isLeader;
-    }
+    let claimed = false;
+    let term = currentTerm;
 
-    const canClaim =
-      !currentLock ||
-      currentLock.holder_id === REPLICA_ID ||
-      new Date(currentLock.lease_expires_at) < now;
+    if (!rpcErr && rpcData && rpcData.length > 0) {
+      const leaseResult = rpcData[0];
+      claimed = !!leaseResult.is_leader;
+      term = Number(leaseResult.term) || currentTerm;
+    } else {
+      // Direct SQL Fallback with atomic conditional update if RPC not yet migrated
+      const now = new Date();
+      const newExpiresAt = new Date(Date.now() + LEASE_DURATION_MS).toISOString();
 
-    if (canClaim) {
-      const { error: upsertErr } = await supabase
+      const { data: currentLock } = await supabase
         .from('whatsapp_session_lock')
-        .upsert(
-          {
-            channel_id: channelId,
-            holder_id: REPLICA_ID,
-            lease_expires_at: newExpiresAt,
-            updated_at: now.toISOString(),
-          },
-          { onConflict: 'channel_id' }
-        );
+        .select('*')
+        .eq('channel_id', channelId)
+        .maybeSingle();
 
-      if (!upsertErr) {
-        if (!isLeader) {
-          console.log(`[LEADER ELECTION] Replica ${REPLICA_ID} became LEADER for WhatsApp session.`);
-          isLeader = true;
-          // Bootstrap Baileys on leader
-          init().catch(err => console.error('[LEADER] Failed to init WhatsApp on leader:', err));
+      const canClaim =
+        !currentLock ||
+        currentLock.holder_id === REPLICA_ID ||
+        new Date(currentLock.lease_expires_at) < now;
+
+      if (canClaim) {
+        const nextTerm = currentLock?.holder_id === REPLICA_ID ? (currentLock.term || 1) : ((currentLock?.term || 0) + 1);
+        const upsertPayload: any = {
+          channel_id: channelId,
+          holder_id: REPLICA_ID,
+          lease_expires_at: newExpiresAt,
+          updated_at: now.toISOString(),
+        };
+        if (currentLock && 'term' in currentLock) {
+          upsertPayload.term = nextTerm;
         }
 
-        // Leader mirrors current in-memory connection state to database table
-        await mirrorConnectionStateToDb(channelId);
+        let { error: upsertErr } = await supabase
+          .from('whatsapp_session_lock')
+          .upsert(upsertPayload, { onConflict: 'channel_id' });
 
-        // Leader processes any messages in the outbound queue
-        processOutboundQueue().catch(err => console.error('[LEADER] Error processing outbound queue:', err));
+        if (upsertErr && upsertPayload.term) {
+          delete upsertPayload.term;
+          const retry = await supabase
+            .from('whatsapp_session_lock')
+            .upsert(upsertPayload, { onConflict: 'channel_id' });
+          upsertErr = retry.error;
+        }
 
-        return true;
+        if (!upsertErr) {
+          claimed = true;
+          term = nextTerm;
+        } else {
+          console.error('[LEADER ELECTION] Upsert error:', upsertErr.message);
+        }
       }
+    }
+
+    if (claimed) {
+      currentTerm = term;
+      if (!isLeader) {
+        console.log(`[LEADER ELECTION] Replica ${REPLICA_ID} claimed LEADER lease at Term #${currentTerm}.`);
+        isLeader = true;
+        // Bootstrap Baileys on leader
+        init().catch((err) => console.error('[LEADER] Failed to init WhatsApp on leader:', err));
+      }
+
+      // Leader mirrors connection state
+      await mirrorConnectionStateToDb(channelId);
+
+      // Leader drains outbound queue
+      processOutboundQueue(channelId).catch((err) => console.error('[LEADER] Error processing outbound queue:', err));
+
+      return true;
     } else {
       if (isLeader) {
-        console.warn(`[LEADER ELECTION] Replica ${REPLICA_ID} lost leadership to ${currentLock.holder_id}.`);
+        console.warn(`[LEADER ELECTION] Replica ${REPLICA_ID} lost leadership lease.`);
         isLeader = false;
       }
+      return false;
     }
   } catch (err: any) {
     console.error('[LEADER ELECTION] Unexpected error in election cycle:', err.message);
+    return isLeader;
   }
-
-  return isLeader;
 }
 
 /**
@@ -134,33 +190,60 @@ export async function getMirroredConnectionState(channelId = 'default'): Promise
 }
 
 /**
- * Leader processes pending rows from whatsapp_outbound_queue table.
+ * Leader processes pending rows from whatsapp_outbound_queue table using atomic batch reservation.
  */
-export async function processOutboundQueue(): Promise<void> {
+export async function processOutboundQueue(channelId = 'default'): Promise<void> {
   if (!isLeader || queueProcessing) return;
   queueProcessing = true;
 
   try {
     const supabase = getSupabaseAdmin();
-    const { data: pendingMessages, error } = await supabase
-      .from('whatsapp_outbound_queue')
-      .select('*')
-      .eq('status', 'pending')
-      .order('created_at', { ascending: true })
-      .limit(10);
 
-    if (error || !pendingMessages || pendingMessages.length === 0) {
+    // 1. Claim batch of pending messages atomically via RPC, fenced against the current lease term
+    const { data: claimedBatch, error: rpcErr } = await supabase.rpc('claim_outbound_queue_batch_atomic', {
+      p_limit: 10,
+      p_channel_id: channelId,
+      p_replica_id: REPLICA_ID,
+      p_expected_term: currentTerm,
+    });
+
+    let itemsToProcess = claimedBatch;
+
+    if (rpcErr || !itemsToProcess) {
+      // Fallback claim if RPC not present
+      const { data: pendingMessages } = await supabase
+        .from('whatsapp_outbound_queue')
+        .select('*')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true })
+        .limit(10);
+
+      if (!pendingMessages || pendingMessages.length === 0) {
+        queueProcessing = false;
+        return;
+      }
+
+      itemsToProcess = [];
+      for (const item of pendingMessages) {
+        const { data: claimed } = await supabase
+          .from('whatsapp_outbound_queue')
+          .update({ status: 'processing', updated_at: new Date().toISOString() })
+          .eq('id', item.id)
+          .eq('status', 'pending')
+          .select()
+          .single();
+
+        if (claimed) itemsToProcess.push(claimed);
+      }
+    }
+
+    if (!itemsToProcess || itemsToProcess.length === 0) {
       queueProcessing = false;
       return;
     }
 
-    for (const item of pendingMessages) {
+    for (const item of itemsToProcess) {
       try {
-        await supabase
-          .from('whatsapp_outbound_queue')
-          .update({ status: 'processing' })
-          .eq('id', item.id);
-
         const result = await sendMessage(item.to_jid, item.text);
 
         await supabase
@@ -212,7 +295,7 @@ export async function enqueueOutboundMessage(to: string, text: string, maxWaitMs
   // Poll for completion
   const startTime = Date.now();
   while (Date.now() - startTime < maxWaitMs) {
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 200));
     const { data: updated } = await supabase
       .from('whatsapp_outbound_queue')
       .select('*')

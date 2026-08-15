@@ -11,6 +11,7 @@ import { dispatchWebhookEvent, signWebhookPayload } from '../../src/lib/webhook-
 import type { WebhookEventType } from '../../src/types';
 
 export async function runPhase4TestSuite(): Promise<boolean> {
+  process.env.ALLOW_LOCAL_WEBHOOKS = 'true';
   console.log('\n============================================================');
   console.log('  PHASE 4: OUTBOUND WEBHOOKS & CRM INTEGRATION TEST SUITE');
   console.log('============================================================\n');
@@ -158,6 +159,7 @@ export async function runPhase4TestSuite(): Promise<boolean> {
       allPassed = false;
     }
   } finally {
+    delete process.env.ALLOW_LOCAL_WEBHOOKS;
     mockServer.close();
     console.log('   - Closed mock webhook server.');
   }

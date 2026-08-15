@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { getSupabaseAdmin } from '../../src/lib/supabase';
+import { getPaginatedLogs, getLogs } from '../../src/lib/db';
 
 export async function runAuditAnalyticsTest(): Promise<boolean> {
   const sb = getSupabaseAdmin();
@@ -34,6 +35,14 @@ export async function runAuditAnalyticsTest(): Promise<boolean> {
     return false;
   }
   console.log('Agents active count:', agents?.filter(a => a.status === 'active').length || 0);
+
+  // Verify getPaginatedLogs
+  const paginated = await getPaginatedLogs({ page: 1, pageSize: 5 });
+  console.log(`Paginated logs verification: Page ${paginated.page} of ${paginated.totalPages}, Total: ${paginated.total}, Returned: ${paginated.logs.length}`);
+  if (paginated.logs.length > 5) {
+    console.error('getPaginatedLogs returned more items than pageSize');
+    return false;
+  }
 
   return true;
 }

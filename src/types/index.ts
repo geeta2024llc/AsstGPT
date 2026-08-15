@@ -172,6 +172,9 @@ export interface Conversation {
   takeoverReason?: string;
   handoffMetadata?: Record<string, any>;
   handoffAt?: number;
+  takeoverBriefing?: TakeoverCatchUpSummary;
+  reEngagementCount?: number;
+  lastReEngagementAt?: number;
   status?: 'open' | 'resolved' | 'pending';
   /** CRM fields */
   contactId?: string;
@@ -184,6 +187,26 @@ export interface Conversation {
   sentiment?: SentimentType;
   firstResponseTimeMs?: number;
   resolutionDurationMs?: number;
+}
+
+export interface TakeoverCatchUpSummary {
+  chatId: string;
+  customerIntent: string;
+  customerFrustration: 'low' | 'medium' | 'high';
+  keyIssue: string;
+  botAttemptsSummary: string;
+  recommendedNextAction: string;
+  generatedAt: number;
+}
+
+export interface ReEngagementConfig {
+  isEnabled: boolean;
+  inactivityHoursThreshold: number; // e.g. 2, 4, 12, 24, 48
+  maxFollowUpsPerConversation: number; // e.g. 1 or 2
+  followUpMessageTemplate: string;
+  onlyUnresolved: boolean;
+  aiGeneratedContextual: boolean;
+  scanIntervalMinutes: number; // how often the background scheduler checks for stale conversations
 }
 
 export function isConversationPaused(convo?: Partial<Conversation> | null): boolean {

@@ -22,6 +22,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   UserCheck,
   Building2,
   Mail,
@@ -35,6 +45,7 @@ import {
   MessageSquare,
   FileText,
   Save,
+  Merge,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -97,6 +108,9 @@ export default function ContactProfileDrawer({
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
+  const [mergeTarget, setMergeTarget] = useState('');
+  const [isMerging, setIsMerging] = useState(false);
+  const [showMergeConfirm, setShowMergeConfirm] = useState(false);
   const { toast } = useToast();
 
   const [formData, setFormData] = useState({
@@ -185,6 +199,33 @@ export default function ContactProfileDrawer({
       ...p,
       tags: p.tags.filter(t => t.toLowerCase() !== tagToRemove.toLowerCase()),
     }));
+  };
+
+  const handleConfirmMerge = async () => {
+    if (!chatId || !mergeTarget.trim()) return;
+    setIsMerging(true);
+    try {
+      const res = await fetch('/api/contacts/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceChatId: chatId, targetIdentifier: mergeTarget.trim() }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Merge failed.');
+
+      toast({
+        title: 'Contacts Merged',
+        description: `This contact's history was merged into "${mergeTarget.trim()}".`,
+      });
+      setMergeTarget('');
+      onClose();
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Merge Failed', description: (err as Error).message });
+    } finally {
+      setIsMerging(false);
+      setShowMergeConfirm(false);
+    }
   };
 
   if (!chatId) return null;
@@ -403,6 +444,39 @@ export default function ContactProfileDrawer({
                 className="text-xs bg-background leading-relaxed"
               />
             </div>
+
+            {/* Duplicate Contact Merge (e.g. for @lid identities that can't auto-reconcile) */}
+            <div className="space-y-1.5 pt-1 border-t">
+              <Label htmlFor="crm-merge-target" className="text-xs flex items-center gap-1 font-semibold">
+                <Merge className="h-3.5 w-3.5 text-muted-foreground" />
+                <span>Merge Into Another Contact</span>
+              </Label>
+              <p className="text-[11px] text-muted-foreground">
+                If this is a duplicate (e.g. a privacy-preserving @lid identity for a customer who
+                already has a phone-based contact), merge it in here. This contact's message history
+                will be preserved and moved onto the target.
+              </p>
+              <div className="flex items-center gap-1.5">
+                <Input
+                  id="crm-merge-target"
+                  value={mergeTarget}
+                  onChange={(e) => setMergeTarget(e.target.value)}
+                  placeholder="Target phone number or chat ID"
+                  className="h-8 text-xs bg-background"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowMergeConfirm(true)}
+                  disabled={!mergeTarget.trim() || isMerging}
+                  className="h-8 text-xs shrink-0 gap-1 text-destructive hover:text-destructive"
+                >
+                  <Merge className="h-3 w-3" />
+                  <span>Merge</span>
+                </Button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -417,6 +491,32 @@ export default function ContactProfileDrawer({
           </Button>
         </div>
       </SheetContent>
+
+      <AlertDialog open={showMergeConfirm} onOpenChange={(open) => !open && setShowMergeConfirm(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Merge this contact into &quot;{mergeTarget}&quot;?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This contact&apos;s message history will be moved onto the target contact, and this contact
+              record will be permanently deleted. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isMerging}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleConfirmMerge();
+              }}
+              disabled={isMerging}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isMerging ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Merge Contacts
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Sheet>
   );
 }

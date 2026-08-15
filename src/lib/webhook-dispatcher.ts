@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { getWebhooks, recordWebhookDelivery, addLog } from './db';
+import { validateSafeWebhookUrl } from './security-utils';
 import type { WebhookEventType, WebhookPayload, WebhookConfig } from '@/types';
 
 /**
@@ -38,6 +39,14 @@ export async function dispatchWebhookEvent<T = any>(
     const payloadString = JSON.stringify(payload);
 
     const deliveryPromises = activeMatching.map(async (webhook) => {
+      // Re-verify URL safety before outbound dispatch to prevent DNS rebinding
+      const urlCheck = validateSafeWebhookUrl(webhook.url);
+      if (!urlCheck.valid) {
+        console.warn(`[WEBHOOK SSRF BLOCKED] Blocked dispatch to "${webhook.url}": ${urlCheck.reason}`);
+        await recordWebhookDelivery(webhook.id, 400, false);
+        return { webhookId: webhook.id, success: false, status: 400, error: urlCheck.reason };
+      }
+
       const signature = signWebhookPayload(payloadString, webhook.secret);
       const timestampHeader = String(payload.timestamp);
 

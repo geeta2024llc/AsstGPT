@@ -1,5 +1,5 @@
-import { HandoffRule, HandoffEvaluationResult, Agent } from '@/types';
-import { getHandoffRules } from './db';
+import { HandoffRule, HandoffEvaluationResult, Agent, TakeoverCatchUpSummary } from '@/types';
+import { getHandoffRules, getMessages, createConversationNote, updateConversation, addLog } from './db';
 
 export const KNOWN_INTENTS = [
   'human_agent_request',
@@ -309,4 +309,143 @@ export async function evaluateHandoffRules(
   }
 
   return { shouldHandoff: false, detectedIntent };
+}
+
+/**
+ * Generates an automated Catch-Up Summary / Briefing for human agents picking up a handed-off chat.
+ */
+export async function generateTakeoverCatchUpSummary(
+  chatId: string,
+  handoffReason?: string
+): Promise<TakeoverCatchUpSummary> {
+  try {
+    const messages = await getMessages(chatId);
+    const recentMessages = (messages || []).slice(-12);
+
+    let customerIntent = 'general_inquiry';
+    let customerFrustration: 'low' | 'medium' | 'high' = 'low';
+    let keyIssue = 'Customer requested human assistance.';
+    let botAttemptsSummary = 'AI provided automated responses.';
+    let recommendedNextAction = 'Greet the customer and ask how you can help.';
+
+    if (recentMessages.length > 0) {
+      const transcript = recentMessages
+        .map(m => `${m.fromMe ? 'Bot/Agent' : 'Customer'}: ${m.text}`)
+        .join('\n');
+
+      const customerMessages = recentMessages.filter(m => !m.fromMe);
+      const lastCustMsg = customerMessages[customerMessages.length - 1]?.text || '';
+
+      const detectedIntent = await classifyIntent(lastCustMsg);
+      customerIntent = detectedIntent;
+
+      const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY || process.env.GOOGLE_API_KEY;
+      if (apiKey) {
+        const prompt = `You are a real-time AI supervisor for human customer support agents.
+Analyze this chat transcript and provide a fast 15-second catch-up briefing for the human agent taking over.
+
+Transcript:
+${transcript}
+
+Handoff Trigger Reason: ${handoffReason || 'Manual agent takeover'}
+
+Return strictly a JSON object with:
+{
+  "customerIntent": "short intent phrase",
+  "customerFrustration": "low" | "medium" | "high",
+  "keyIssue": "1 concise sentence stating the core customer problem/request",
+  "botAttemptsSummary": "1 concise sentence summarizing what the bot already answered/attempted",
+  "recommendedNextAction": "1 actionable sentence advising what the human agent should do next"
+}`;
+
+        const candidateModels = ['gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-3.1-flash-lite', 'gemini-3.5-flash'];
+        for (const model of candidateModels) {
+          try {
+            const resp = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  contents: [{ parts: [{ text: prompt }] }],
+                  generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
+                }),
+                signal: AbortSignal.timeout(4000),
+              }
+            );
+
+            if (resp.ok) {
+              const data = await resp.json();
+              const jsonText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+              const parsed = JSON.parse(jsonText);
+              if (parsed.keyIssue) {
+                customerIntent = parsed.customerIntent || customerIntent;
+                customerFrustration = ['low', 'medium', 'high'].includes(parsed.customerFrustration) ? parsed.customerFrustration : 'low';
+                keyIssue = parsed.keyIssue;
+                botAttemptsSummary = parsed.botAttemptsSummary || botAttemptsSummary;
+                recommendedNextAction = parsed.recommendedNextAction || recommendedNextAction;
+                break;
+              }
+            }
+          } catch (e) {
+            // try next model
+          }
+        }
+      } else {
+        // Heuristic fallback
+        keyIssue = lastCustMsg ? `Customer message: "${lastCustMsg.slice(0, 100)}"` : 'Customer requested human assistance.';
+        if (/cancel|refund|angry|terrible|broken|worst/i.test(lastCustMsg)) {
+          customerFrustration = 'high';
+          recommendedNextAction = 'Prioritize empathy and resolve customer dispute.';
+        }
+      }
+    }
+
+    const summary: TakeoverCatchUpSummary = {
+      chatId,
+      customerIntent,
+      customerFrustration,
+      keyIssue,
+      botAttemptsSummary,
+      recommendedNextAction,
+      generatedAt: Date.now(),
+    };
+
+    // Save briefing to conversation metadata
+    await updateConversation(chatId, {
+      handoffMetadata: {
+        ...(handoffReason ? { reason: handoffReason } : {}),
+        takeoverBriefing: summary,
+      },
+    });
+
+    // Create an internal timeline note for the human agent
+    try {
+      await createConversationNote({
+        chatId,
+        content: `📋 [AI Catch-Up Briefing]\n• Issue: ${summary.keyIssue}\n• Frustration: ${summary.customerFrustration.toUpperCase()}\n• What Bot Did: ${summary.botAttemptsSummary}\n• Next Step: ${summary.recommendedNextAction}`,
+        userName: '🤖 AI Catch-Up Briefing',
+      });
+    } catch (_) {}
+
+    await addLog({
+      user: 'Handoff Engine',
+      action: 'Catch-Up Summary Generated',
+      details: `Generated takeover briefing for ${chatId}: ${summary.keyIssue}`,
+      type: 'info',
+    });
+
+    return summary;
+  } catch (err: any) {
+    console.error('Error generating takeover catch-up summary:', err);
+    return {
+      chatId,
+      customerIntent: 'general',
+      customerFrustration: 'low',
+      keyIssue: 'Customer conversation escalated to human operator.',
+      botAttemptsSummary: 'Automated AI bot responses provided.',
+      recommendedNextAction: 'Review chat history and assist customer.',
+      generatedAt: Date.now(),
+    };
+  }
 }
