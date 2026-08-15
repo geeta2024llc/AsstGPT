@@ -65,14 +65,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider>
       <Sidebar collapsible="icon">
-        <SidebarHeader>
-          <div className="flex items-center gap-3">
-            <Bot className="size-8 text-primary" />
+        <SidebarHeader className="space-y-2.5 pb-2">
+          <div className="flex items-center gap-3 px-1">
+            <Bot className="size-8 text-primary shrink-0" />
             <div className="flex flex-col group-data-[collapsible=icon]:hidden">
               <span className="font-headline text-xl font-semibold">
                 AsstGPT
               </span>
             </div>
+          </div>
+          <div className="px-0.5">
+            <Button
+              asChild
+              className={`w-full justify-start gap-2.5 font-medium transition-all ${
+                pathname.startsWith('/whatsapp')
+                  ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400 shadow-md shadow-emerald-500/25'
+                  : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30'
+              } group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:h-9`}
+              size="sm"
+            >
+              <Link href="/whatsapp" title="Connect WhatsApp">
+                <QrCode className="h-4 w-4 shrink-0" />
+                <span className="group-data-[collapsible=icon]:hidden truncate">Connect</span>
+              </Link>
+            </Button>
           </div>
         </SidebarHeader>
         <SidebarContent>
@@ -92,36 +108,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <SidebarMenuItem>
               <SidebarMenuButton
                 asChild
-                isActive={pathname.startsWith('/agents')}
-                tooltip="Bot Persona, Roles & Prompts"
-              >
-                <Link href="/agents">
-                  <Bot />
-                  <span>Agents & Prompts</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
                 isActive={pathname.startsWith('/inbox')}
                 tooltip="Inbox"
               >
                 <Link href="/inbox">
                   <MessageSquare />
                   <span>Inbox</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={pathname.startsWith('/whatsapp')}
-                tooltip="WhatsApp Connection"
-              >
-                <Link href="/whatsapp">
-                  <QrCode />
-                  <span>WhatsApp</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

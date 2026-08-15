@@ -26,5 +26,5 @@ export const GET = withApiAuth(
 
     return NextResponse.json(getClientState());
   },
-  { roles: ['admin', 'operator'] }
+  { allowPublic: true, roles: ['admin', 'operator'] }
 );

@@ -38,7 +38,8 @@ export async function getPlatformAdminRecord(email: string, userId?: string) {
 
     const isDesignatedSuperAdmin =
       envSuperAdmins.includes(normalizedEmail) ||
-      normalizedEmail === 'geeta2024llc@gmail.com';
+      normalizedEmail === 'geeta2024llc@gmail.com' ||
+      normalizedEmail === 'gita2024llc@gmail.com';
 
     if (isDesignatedSuperAdmin) {
       const { data: inserted, error: insertErr } = await admin

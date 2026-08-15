@@ -550,16 +550,18 @@ export default function UsersManagementPage() {
                           <Badge
                             variant="outline"
                             className={`capitalize text-xs font-semibold ${
-                              isPlatformAdminRole
-                                ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                              u.primaryRole === 'super_admin'
+                                ? 'bg-amber-500/15 text-amber-300 border-amber-500/40 shadow-xs'
+                                : u.primaryRole === 'admin'
+                                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
                                 : u.primaryRole === 'owner'
-                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                : isSuperAdminRole
-                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                                : 'bg-sky-500/10 text-sky-400 border-sky-500/30'
+                                ? 'bg-teal-500/15 text-teal-400 border-teal-500/30'
+                                : u.primaryRole === 'operator'
+                                ? 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+                                : 'bg-slate-500/10 text-slate-400 border-slate-500/30'
                             }`}
                           >
-                            {u.primaryRole.replace(/_/g, ' ')}
+                            {u.primaryRole === 'super_admin' ? 'Super Admin' : u.primaryRole.replace(/_/g, ' ')}
                           </Badge>
                         </TableCell>
 

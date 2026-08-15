@@ -409,14 +409,6 @@ export default function KnowledgeBaseManager() {
     return true;
   });
 
-  // Calculate total parsed FAQs
-  const totalFaqCount = files.reduce((acc, file) => {
-    if (file.fileType === 'faq' || file.content.includes('Q:')) {
-      return acc + parseFaqContent(file.content).length;
-    }
-    return acc;
-  }, 0);
-
   const getStatusBadge = (status?: string, enabled?: boolean) => {
     if (enabled === false || status === 'disabled') {
       return <Badge variant="outline" className="text-muted-foreground border-muted flex items-center gap-1"><XCircle className="w-3 h-3" /> Disabled</Badge>;
@@ -439,58 +431,7 @@ export default function KnowledgeBaseManager() {
 
   return (
     <div className="space-y-6">
-      {/* 1. TOP METRICS & PERSONA STUDIO LINK */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className="p-4 rounded-xl border border-border bg-card/60 flex items-center justify-between shadow-sm">
-          <div className="space-y-1">
-            <span className="text-xs text-muted-foreground font-medium">Total Sources</span>
-            <p className="text-2xl font-bold text-foreground">{files.length}</p>
-          </div>
-          <div className="p-2.5 rounded-lg bg-primary/10 text-primary">
-            <Database className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl border border-border bg-card/60 flex items-center justify-between shadow-sm">
-          <div className="space-y-1">
-            <span className="text-xs text-muted-foreground font-medium">Indexed Q&A Pairs</span>
-            <p className="text-2xl font-bold text-foreground">{totalFaqCount}</p>
-          </div>
-          <div className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-400">
-            <HelpCircle className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl border border-border bg-card/60 flex items-center justify-between shadow-sm">
-          <div className="space-y-1">
-            <span className="text-xs text-muted-foreground font-medium">RAG Retrieval</span>
-            <div className="flex items-center gap-1.5 pt-0.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-sm font-semibold text-emerald-400">Fast Path Live</span>
-            </div>
-          </div>
-          <div className="p-2.5 rounded-lg bg-teal-500/10 text-teal-400">
-            <ShieldCheck className="w-5 h-5" />
-          </div>
-        </div>
-
-        <Link
-          href="/agents"
-          className="p-4 rounded-xl border border-primary/40 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent hover:border-primary transition-all flex items-center justify-between shadow-sm group cursor-pointer"
-        >
-          <div className="space-y-1">
-            <span className="text-xs text-primary font-semibold flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5" /> Bot Studio
-            </span>
-            <p className="text-xs font-medium text-foreground">Configure Persona & Tone →</p>
-          </div>
-          <div className="p-2.5 rounded-lg bg-primary text-primary-foreground group-hover:scale-105 transition-transform">
-            <Bot className="w-5 h-5" />
-          </div>
-        </Link>
-      </div>
-
-      {/* 2. THREE PRIMARY WAYS TO ADD KNOWLEDGE */}
+      {/* 1. THREE PRIMARY WAYS TO ADD KNOWLEDGE */}
       <div className="space-y-2">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Quick Ingestion — Choose How to Add Facts

@@ -186,11 +186,12 @@ export async function POST(request: Request) {
         await db.setConversationTakeover(
           chatId,
           true,
-          rule.actions?.assignUserId,
+          rule.actions?.assignToUserId,
           rule.name
         );
 
-        const handoffNotice = rule.actions?.notifyMessage ||
+        const handoffNotice = handoffCheck.transitionMessage ||
+          rule.actions?.transitionMessage ||
           'You have been transferred to a support specialist. An agent will respond shortly.';
 
         const noticeMsgId = `web_notice_${crypto.randomUUID()}`;
@@ -209,7 +210,7 @@ export async function POST(request: Request) {
           chatId,
           ruleName: rule.name,
           reason: handoffCheck.reason,
-          assignedUserId: rule.actions?.assignUserId,
+          assignedUserId: rule.actions?.assignToUserId,
           timestamp: Date.now(),
         }).catch(err => console.error('Webhook dispatch error:', err));
 
@@ -239,14 +240,12 @@ export async function POST(request: Request) {
         const cached = dynamicResponseCache.get(cleanText);
         if (cached) {
           replyText = cached;
-        } else if (activeAgent) {
+        } else if (activeAgent?.aiSettings) {
           try {
-            const knowledgeContext = await retrieveRelevantKnowledgeContext(cleanText);
             const aiResponse = await generateAIResponse(
-              activeAgent,
               cleanText,
-              history,
-              knowledgeContext
+              activeAgent.aiSettings,
+              history
             );
             if (aiResponse) {
               replyText = aiResponse;

@@ -14,6 +14,7 @@ function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(
     isUnassigned
@@ -27,14 +28,28 @@ function LoginForm() {
     }
   }, [isUnassigned]);
 
+  useEffect(() => {
+    try {
+      const savedRemember = localStorage.getItem('asstgpt_remember_me');
+      const savedEmail = localStorage.getItem('asstgpt_remembered_email');
+      if (savedRemember === 'true' && savedEmail) {
+        setEmail(savedEmail);
+        setRememberMe(true);
+      } else if (savedRemember === 'false') {
+        setRememberMe(false);
+      }
+    } catch (_) {}
+  }, []);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
     try {
+      const cleanEmail = email.trim().toLowerCase();
       const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
         password,
       });
 
@@ -43,8 +58,20 @@ function LoginForm() {
       }
 
       if (data?.session) {
-        // Set session cookie for middleware
-        document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=604800; SameSite=Lax; secure`;
+        // Save or clear remembered email in localStorage
+        try {
+          if (rememberMe) {
+            localStorage.setItem('asstgpt_remember_me', 'true');
+            localStorage.setItem('asstgpt_remembered_email', cleanEmail);
+          } else {
+            localStorage.setItem('asstgpt_remember_me', 'false');
+            localStorage.removeItem('asstgpt_remembered_email');
+          }
+        } catch (_) {}
+
+        // Set session cookie for middleware (30 days if rememberMe, 1 day if not)
+        const cookieMaxAge = rememberMe ? 2592000 : 86400;
+        document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${cookieMaxAge}; SameSite=Lax; secure`;
 
         // 1. Smart role detection: Check if this user is a platform super admin
         try {
@@ -117,14 +144,17 @@ function LoginForm() {
       )}
 
       <div>
-        <label className="block text-xs font-medium text-slate-300 mb-1.5">Work Email</label>
+        <label htmlFor="email" className="block text-xs font-medium text-slate-300 mb-1.5">Work Email</label>
         <div className="relative">
           <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
             <Mail className="w-4 h-4" />
           </div>
           <input
+            id="email"
+            name="email"
             type="email"
             required
+            autoComplete="username email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="name@company.com"
@@ -134,14 +164,17 @@ function LoginForm() {
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-slate-300 mb-1.5">Password</label>
+        <label htmlFor="password" className="block text-xs font-medium text-slate-300 mb-1.5">Password</label>
         <div className="relative">
           <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
             <Lock className="w-4 h-4" />
           </div>
           <input
+            id="password"
+            name="password"
             type={showPassword ? 'text' : 'password'}
             required
+            autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••••••"
@@ -157,6 +190,21 @@ function LoginForm() {
             {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
         </div>
+      </div>
+
+      {/* Remember Me Checkbox */}
+      <div className="flex items-center justify-between pt-0.5 pb-1">
+        <label htmlFor="rememberMe" className="flex items-center gap-2.5 text-xs text-slate-300 cursor-pointer select-none group">
+          <input
+            id="rememberMe"
+            name="rememberMe"
+            type="checkbox"
+            checked={rememberMe}
+            onChange={(e) => setRememberMe(e.target.checked)}
+            className="w-4 h-4 rounded border-slate-700 bg-slate-950/60 text-emerald-500 focus:ring-emerald-500/20 focus:ring-offset-0 focus:ring-2 cursor-pointer accent-emerald-500 transition-all"
+          />
+          <span className="group-hover:text-slate-200 transition-colors">Remember me</span>
+        </label>
       </div>
 
       <button

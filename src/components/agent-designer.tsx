@@ -978,10 +978,10 @@ export default function AgentDesigner({ agent, onSaved, onDirtyChange }: AgentDe
               </div>
               <div>
                 <h2 className="font-headline flex items-center gap-2 text-xl font-semibold">
-                  {agent ? `Editing: ${agent.name}` : (form.watch('name') || 'New AI Agent')}
+                  {agent ? `AI Personality: ${agent.name}` : (form.watch('name') || 'AI Personality')}
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  {isDirty ? 'You have unsaved changes.' : 'Configure your agent identity, prompts, and knowledge below.'}
+                  {isDirty ? 'You have unsaved changes.' : 'Configure your AI personality identity, tone of voice, prompts, and instructions below.'}
                 </p>
               </div>
             </div>
@@ -1010,7 +1010,7 @@ export default function AgentDesigner({ agent, onSaved, onDirtyChange }: AgentDe
                 ) : (
                   <Save className="mr-2 h-4 w-4" />
                 )}
-                Save Agent
+                Save AI Personality
               </Button>
             </div>
           </div>
@@ -1074,10 +1074,10 @@ export default function AgentDesigner({ agent, onSaved, onDirtyChange }: AgentDe
             <DialogContent className="sm:max-w-[480px]">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2 text-lg font-headline">
-                  <Wand2 className="h-5 w-5 text-primary" /> AI Magic Agent Auto-Setup
+                  <Wand2 className="h-5 w-5 text-primary" /> AI Magic Personality Auto-Setup
                 </DialogTitle>
                 <CardDescription className="text-xs">
-                  Describe your business or store in a single sentence. We&apos;ll automatically design the bot&apos;s name, avatar, persona, and prompts.
+                  Describe your business or store in a single sentence. We&apos;ll automatically configure the bot&apos;s name, avatar, tone, and directives.
                 </CardDescription>
               </DialogHeader>
 

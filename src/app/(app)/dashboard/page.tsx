@@ -392,12 +392,12 @@ export default function DashboardPage() {
         </Link>
 
         <Link
-          href="/agents"
+          href="/knowledge-base?tab=personality"
           className="p-4 rounded-xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent hover:border-emerald-500 transition-all flex items-center justify-between shadow-sm group cursor-pointer"
         >
           <div className="space-y-1">
             <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" /> Bot Studio & Prompts
+              <Sparkles className="w-3.5 h-3.5" /> AI Personality & Prompts
             </span>
             <p className="text-sm font-bold text-foreground">
               {analytics?.kpis.activeAgents || 1} Active Bot(s) <ArrowRight className="inline w-3.5 h-3.5 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />

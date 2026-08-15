@@ -4,6 +4,7 @@ import { timingSafeCompare } from '@/lib/security-utils';
 
 // Public endpoints accessible without authentication
 const PUBLIC_PATHS = [
+  '/',
   '/login',
   '/super-admin/login',
   '/signup',
@@ -12,6 +13,7 @@ const PUBLIC_PATHS = [
   '/api/auth',
   '/api/invite',
   '/api/widget',
+  '/api/whatsapp',
   '/_next',
   '/favicon.ico',
   '/assets',

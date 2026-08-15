@@ -306,10 +306,10 @@ export default function WorkspaceSettingsManager() {
             </div>
             <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
           </a>
-          <a href="/agents" className="flex items-center justify-between rounded-xl border p-3 hover:bg-muted/50 transition-colors">
+          <a href="/knowledge-base?tab=personality" className="flex items-center justify-between rounded-xl border p-3 hover:bg-muted/50 transition-colors">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">AI Agents & Instructions</span>
+              <span className="text-sm font-medium">AI Personality & Prompts</span>
             </div>
             <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
           </a>
