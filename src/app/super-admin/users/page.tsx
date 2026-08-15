@@ -456,6 +456,7 @@ export default function UsersManagementPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Roles</SelectItem>
+                    <SelectItem value="super_admin">Super Admins</SelectItem>
                     <SelectItem value="admin">Admins Only</SelectItem>
                     <SelectItem value="operator">Operators</SelectItem>
                     <SelectItem value="owner">Owners</SelectItem>
@@ -507,6 +508,7 @@ export default function UsersManagementPage() {
                       .toUpperCase();
 
                     const primaryOrg = u.memberships[0]?.tenantName || u.memberships[0]?.tenantSlug || 'None';
+                    const isPlatformAdminRole = u.primaryRole === 'super_admin' || u.primaryRole === 'auditor';
                     const isSuperAdminRole = u.primaryRole === 'admin' || u.primaryRole === 'owner';
 
                     return (
@@ -548,14 +550,16 @@ export default function UsersManagementPage() {
                           <Badge
                             variant="outline"
                             className={`capitalize text-xs font-semibold ${
-                              u.primaryRole === 'owner'
+                              isPlatformAdminRole
+                                ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                                : u.primaryRole === 'owner'
                                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                                 : isSuperAdminRole
                                 ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
                                 : 'bg-sky-500/10 text-sky-400 border-sky-500/30'
                             }`}
                           >
-                            {u.primaryRole}
+                            {u.primaryRole.replace(/_/g, ' ')}
                           </Badge>
                         </TableCell>
 

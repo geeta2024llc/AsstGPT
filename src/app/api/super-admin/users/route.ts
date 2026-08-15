@@ -71,9 +71,35 @@ export const GET = withPlatformAdminAuth(async (req: NextRequest) => {
     membershipsByUser.set(m.user_id, list);
   }
 
+  // Platform-level admin status (public.platform_admins) is a separate
+  // authorization boundary from tenant RBAC -- match by user_id where
+  // linked, and by email otherwise, since super admins are provisioned
+  // without any tenant_members row. Two bound .in() calls instead of one
+  // interpolated .or() filter, since emails are user-controlled and a
+  // comma/parenthesis in one could inject extra PostgREST filter syntax.
+  const userEmails = users.map((u) => u.email?.toLowerCase()).filter(Boolean) as string[];
+  const [byUserId, byEmail] = await Promise.all([
+    userIds.length
+      ? admin.from('platform_admins').select('user_id, email, platform_role').is('revoked_at', null).in('user_id', userIds)
+      : Promise.resolve({ data: [] as any[] }),
+    userEmails.length
+      ? admin.from('platform_admins').select('user_id, email, platform_role').is('revoked_at', null).in('email', userEmails)
+      : Promise.resolve({ data: [] as any[] }),
+  ]);
+
+  const platformRoleByUserId = new Map<string, string>();
+  const platformRoleByEmail = new Map<string, string>();
+  for (const p of [...(byUserId.data || []), ...(byEmail.data || [])]) {
+    if (p.user_id) platformRoleByUserId.set(p.user_id, p.platform_role);
+    if (p.email) platformRoleByEmail.set(p.email.toLowerCase(), p.platform_role);
+  }
+
   let mappedUsers = users.map((u) => {
     const userMemberships = membershipsByUser.get(u.id) || [];
+    const platformRole =
+      platformRoleByUserId.get(u.id) || platformRoleByEmail.get(u.email?.toLowerCase() || '');
     const primaryRole =
+      platformRole ||
       userMemberships[0]?.role ||
       u.app_metadata?.role ||
       u.user_metadata?.role ||
