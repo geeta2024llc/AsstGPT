@@ -1,4 +1,4 @@
-# AIWhisper Production Deployment Guide
+# AsstGPT Production Deployment Guide
 
 ## Deployment Architecture
 
@@ -55,7 +55,7 @@ NODE_ENV=production
 ```
 
 > [!NOTE]
-> Railway automatically assigns a dynamic `$PORT` variable (e.g. `PORT=8080`). AIWhisper's [Dockerfile](file:///h:/Antigravity/Ai%20Automation/AIWhisper/Dockerfile) automatically binds to dynamic `$PORT`.
+> Railway automatically assigns a dynamic `$PORT` variable (e.g. `PORT=8080`). AsstGPT's [Dockerfile](file:///h:/Antigravity/Ai%20Automation/AIWhisper/Dockerfile) automatically binds to dynamic `$PORT`.
 
 ### Step 4: Generate Domain & Check Health
 1. Go to **Settings** -> **Networking** -> **Generate Domain**.

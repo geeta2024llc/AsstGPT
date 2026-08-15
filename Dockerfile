@@ -1,5 +1,5 @@
 # ============================================================================
-# Production Dockerfile for AIWhisper (Next.js + Baileys + Supabase + Gemini)
+# Production Dockerfile for AsstGPT (Next.js + Baileys + Supabase + Gemini)
 # Maintains persistent WhatsApp session storage via mounted volume at /app/whatsapp-auth
 # ============================================================================
 

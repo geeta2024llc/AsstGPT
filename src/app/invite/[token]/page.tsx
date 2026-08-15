@@ -102,7 +102,7 @@ export default function InviteAcceptPage() {
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-white">You've Been Invited</h1>
           <p className="text-sm text-slate-400 mt-1">
-            {preview ? `Join ${preview.tenantName} on AIWhisper` : 'Checking your invitation...'}
+            {preview ? `Join ${preview.tenantName} on AsstGPT` : 'Checking your invitation...'}
           </p>
         </div>
 

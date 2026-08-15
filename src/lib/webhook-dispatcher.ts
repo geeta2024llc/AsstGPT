@@ -1,5 +1,6 @@
 import crypto from 'crypto';
-import { getWebhooks, recordWebhookDelivery, addLog } from './db';
+import { getWebhooks, recordWebhookDelivery, addLog, ensureDefaultTenantAndChannel } from './db';
+import { getRequestContext } from './request-context';
 import { validateSafeWebhookUrl } from './security-utils';
 import type { WebhookEventType, WebhookPayload, WebhookConfig } from '@/types';
 
@@ -28,11 +29,15 @@ export async function dispatchWebhookEvent<T = any>(
       return { totalMatched: 0, successful: 0, failed: 0 };
     }
 
+    const ctx = getRequestContext();
+    const { tenantId: resolvedTenantId } = await ensureDefaultTenantAndChannel();
+    const tenantId = ctx?.tenantId || resolvedTenantId;
+
     const payload: WebhookPayload<T> = {
       id: crypto.randomUUID(),
       event,
       timestamp: Date.now(),
-      tenantId: process.env.DEFAULT_TENANT_ID || '00000000-0000-0000-0000-000000000001',
+      tenantId,
       data,
     };
 

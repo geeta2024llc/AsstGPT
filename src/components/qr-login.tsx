@@ -134,7 +134,7 @@ export default function QRLogin() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
       <div className="mb-8 text-center">
         <h1 className="font-headline text-5xl font-bold text-primary">
-          AIWhisper
+          AsstGPT
         </h1>
         <p className="mt-2 text-lg text-muted-foreground">
           Your AI-Powered WhatsApp Hub

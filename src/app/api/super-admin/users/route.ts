@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withPlatformAdminAuth } from '@/lib/platform-admin-guard';
+import { logPlatformAction } from '@/lib/platform-audit';
 import { getSupabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
@@ -18,10 +19,15 @@ async function findAllUsersMatching(
 
   for (let page = 1; page <= MAX_PAGES; page++) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
-    if (error || !data.users.length) break;
+    if (error || !data?.users?.length) break;
 
     for (const u of data.users) {
-      if (u.email?.toLowerCase().includes(search)) matches.push(u);
+      if (
+        u.email?.toLowerCase().includes(search) ||
+        (u.user_metadata?.full_name && String(u.user_metadata.full_name).toLowerCase().includes(search))
+      ) {
+        matches.push(u);
+      }
     }
 
     if (data.users.length < 1000) break; // last page exhausted
@@ -33,6 +39,7 @@ async function findAllUsersMatching(
 export const GET = withPlatformAdminAuth(async (req: NextRequest) => {
   const admin = getSupabaseAdmin();
   const search = req.nextUrl.searchParams.get('q')?.trim().toLowerCase();
+  const roleFilter = req.nextUrl.searchParams.get('role')?.trim().toLowerCase();
   const page = Math.max(1, Number(req.nextUrl.searchParams.get('page')) || 1);
 
   let users: any[];
@@ -43,7 +50,7 @@ export const GET = withPlatformAdminAuth(async (req: NextRequest) => {
     if (error) {
       return NextResponse.json({ error: 'Failed to list users' }, { status: 500 });
     }
-    users = authList.users;
+    users = authList.users || [];
   }
 
   const userIds = users.map((u) => u.id);
@@ -55,20 +62,158 @@ export const GET = withPlatformAdminAuth(async (req: NextRequest) => {
   const membershipsByUser = new Map<string, any[]>();
   for (const m of memberships || []) {
     const list = membershipsByUser.get(m.user_id) || [];
-    list.push({ tenantId: m.tenant_id, role: m.role, tenantName: (m as any).tenants?.name, tenantSlug: (m as any).tenants?.slug });
+    list.push({
+      tenantId: m.tenant_id,
+      role: m.role,
+      tenantName: (m as any).tenants?.name,
+      tenantSlug: (m as any).tenants?.slug,
+    });
     membershipsByUser.set(m.user_id, list);
   }
 
-  return NextResponse.json({
-    users: users.map((u) => ({
+  let mappedUsers = users.map((u) => {
+    const userMemberships = membershipsByUser.get(u.id) || [];
+    const primaryRole =
+      userMemberships[0]?.role ||
+      u.app_metadata?.role ||
+      u.user_metadata?.role ||
+      'member';
+
+    return {
       id: u.id,
       email: u.email,
+      fullName: u.user_metadata?.full_name || '',
       createdAt: u.created_at,
       lastSignInAt: u.last_sign_in_at,
       bannedUntil: (u as any).banned_until || null,
       isBanned: !!(u as any).banned_until && new Date((u as any).banned_until) > new Date(),
-      memberships: membershipsByUser.get(u.id) || [],
-    })),
+      primaryRole,
+      memberships: userMemberships,
+    };
+  });
+
+  if (roleFilter && roleFilter !== 'all') {
+    mappedUsers = mappedUsers.filter((u) =>
+      u.primaryRole === roleFilter || u.memberships.some((m) => m.role === roleFilter)
+    );
+  }
+
+  return NextResponse.json({
+    users: mappedUsers,
+    total: mappedUsers.length,
     page,
   });
 }, { roles: ['super_admin', 'auditor'] });
+
+export const POST = withPlatformAdminAuth(async (req: NextRequest, ctx) => {
+  const admin = getSupabaseAdmin();
+  const body = await req.json().catch(() => ({}));
+
+  const email = (body.email || '').trim().toLowerCase();
+  const password = body.password;
+  const fullName = (body.fullName || '').trim();
+  const tenantId = (body.tenantId || '').trim();
+  const role = (body.role || 'admin').trim().toLowerCase();
+
+  if (!email || !password || !tenantId) {
+    return NextResponse.json(
+      { error: 'Email, password, and target organization (tenantId) are required' },
+      { status: 400 }
+    );
+  }
+
+  if (password.length < 8) {
+    return NextResponse.json(
+      { error: 'Password must be at least 8 characters long' },
+      { status: 400 }
+    );
+  }
+
+  const validRoles = ['owner', 'admin', 'operator', 'viewer'];
+  if (!validRoles.includes(role)) {
+    return NextResponse.json(
+      { error: `Invalid role. Must be one of: ${validRoles.join(', ')}` },
+      { status: 400 }
+    );
+  }
+
+  // 1. Verify tenant existence
+  const { data: tenant, error: tenantErr } = await admin
+    .from('tenants')
+    .select('id, name, slug')
+    .eq('id', tenantId)
+    .maybeSingle();
+
+  if (tenantErr || !tenant) {
+    return NextResponse.json({ error: 'Selected organization does not exist' }, { status: 404 });
+  }
+
+  // 2. Create the Auth user with tenant_id and role stamped into app_metadata
+  const { data: created, error: createErr } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { full_name: fullName },
+    app_metadata: { tenant_id: tenantId, role },
+  });
+
+  if (createErr || !created?.user) {
+    const isConflict = createErr?.message?.toLowerCase().includes('already registered');
+    return NextResponse.json(
+      { error: isConflict ? 'An account with this email already exists' : createErr?.message || 'Failed to create user' },
+      { status: isConflict ? 409 : 400 }
+    );
+  }
+
+  const userId = created.user.id;
+
+  // 3. Upsert into public.users table
+  await admin.from('users').upsert({
+    id: userId,
+    email,
+    full_name: fullName,
+  }, { onConflict: 'id' });
+
+  // 4. Create membership in tenant_members
+  const { error: memberErr } = await admin.from('tenant_members').insert({
+    tenant_id: tenantId,
+    user_id: userId,
+    role,
+  });
+
+  if (memberErr) {
+    console.error('Failed to link tenant membership:', memberErr);
+    // Cleanup created auth user if membership fails
+    await admin.auth.admin.deleteUser(userId).catch(() => {});
+    return NextResponse.json({ error: 'Failed to assign workspace membership' }, { status: 500 });
+  }
+
+  // 5. Create immutable platform audit log entry
+  await logPlatformAction({
+    actorUserId: ctx.userId,
+    actorEmail: ctx.email,
+    action: 'user.create',
+    targetType: 'user',
+    targetId: userId,
+    tenantId,
+    ip: ctx.ip,
+    metadata: {
+      email,
+      fullName,
+      role,
+      tenantId,
+      tenantName: tenant.name,
+    },
+  });
+
+  return NextResponse.json({
+    id: userId,
+    email,
+    fullName,
+    role,
+    tenantId,
+    tenantName: tenant.name,
+    isBanned: false,
+    createdAt: created.user.created_at,
+  }, { status: 201 });
+}, { roles: ['super_admin'] });

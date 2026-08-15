@@ -4,7 +4,8 @@ import { getSupabaseAdmin } from '../../src/lib/supabase';
 import { withPlatformAdminAuth } from '../../src/lib/platform-admin-guard';
 import { PATCH as organizationPatch, DELETE as organizationDelete } from '../../src/app/api/super-admin/organizations/[id]/route';
 import { GET as organizationsListGet } from '../../src/app/api/super-admin/organizations/route';
-import { PATCH as userPatch } from '../../src/app/api/super-admin/users/[id]/route';
+import { GET as usersListGet, POST as userCreate } from '../../src/app/api/super-admin/users/route';
+import { PATCH as userPatch, DELETE as userDelete } from '../../src/app/api/super-admin/users/[id]/route';
 import { POST as impersonateStart } from '../../src/app/api/super-admin/impersonate/route';
 import { GET as meGet } from '../../src/app/api/super-admin/me/route';
 
@@ -124,6 +125,105 @@ export async function runSuperAdminTestSuite(): Promise<boolean> {
       allPassed = false;
     }
 
+    // 3b. Admin Management Lifecycle: Create -> Edit -> List/Filter -> Delete
+    console.log('\n3b. Testing Admin Management lifecycle (Create, Edit, Filter, Delete, Self-delete protection)...');
+    let managedAdminUserId: string | null = null;
+    const MANAGED_ADMIN_EMAIL = `super-admin-managed-${Date.now()}@aiwhisper.internal`;
+    try {
+      // A. Create new admin user
+      const createReq = makeRequest('http://localhost:3000/api/super-admin/users', {
+        method: 'POST',
+        headers: { 'x-user-id': TEST_ADMIN_USER_ID, 'x-user-email': TEST_ADMIN_EMAIL, 'Content-Type': 'application/json' },
+        body: {
+          email: MANAGED_ADMIN_EMAIL,
+          password: 'TemporaryAdminPassword123!',
+          fullName: 'Managed Platform Admin',
+          tenantId: TEST_TENANT_ID,
+          role: 'admin',
+        },
+      });
+      const createRes = await userCreate(createReq);
+      const createJson = await createRes.json();
+      const createdSuccess = createRes.status === 201 && !!createJson.id && createJson.email === MANAGED_ADMIN_EMAIL;
+      console.log(`   - SuperAdmin creates new admin user: ${createdSuccess ? '✅ PASS' : '❌ FAIL'} (status ${createRes.status})`);
+      if (!createdSuccess) allPassed = false;
+      managedAdminUserId = createJson.id;
+
+      // Verify membership
+      const { data: memberRow } = await sb
+        .from('tenant_members')
+        .select('role')
+        .eq('tenant_id', TEST_TENANT_ID)
+        .eq('user_id', managedAdminUserId!)
+        .maybeSingle();
+      const memberCreated = memberRow?.role === 'admin';
+      console.log(`   - New admin linked in tenant_members: ${memberCreated ? '✅ PASS' : '❌ FAIL'}`);
+      if (!memberCreated) allPassed = false;
+
+      // B. Update admin details (role, full_name, password)
+      const updateReq = makeRequest(`http://localhost:3000/api/super-admin/users/${managedAdminUserId}`, {
+        method: 'PATCH',
+        headers: { 'x-user-id': TEST_ADMIN_USER_ID, 'x-user-email': TEST_ADMIN_EMAIL, 'Content-Type': 'application/json' },
+        body: {
+          action: 'update',
+          fullName: 'Updated Admin Name',
+          role: 'operator',
+          password: 'NewUpdatedPassword456!',
+        },
+      });
+      const updateRes = await userPatch(updateReq, { params: Promise.resolve({ id: managedAdminUserId! }) } as any);
+      const updateJson = await updateRes.json();
+      const updatedSuccess = updateRes.status === 200 && updateJson.fullName === 'Updated Admin Name' && updateJson.role === 'operator';
+      console.log(`   - SuperAdmin updates admin details and resets password: ${updatedSuccess ? '✅ PASS' : '❌ FAIL'}`);
+      if (!updatedSuccess) allPassed = false;
+
+      // C. List users with search and role filter
+      const listReq = makeRequest(`http://localhost:3000/api/super-admin/users?q=${encodeURIComponent(MANAGED_ADMIN_EMAIL)}`, {
+        headers: { 'x-user-id': TEST_ADMIN_USER_ID, 'x-user-email': TEST_ADMIN_EMAIL },
+      });
+      const listRes = await usersListGet(listReq);
+      const listJson = await listRes.json();
+      const foundInList = listRes.status === 200 && listJson.users?.some((u: any) => u.id === managedAdminUserId);
+      console.log(`   - Users list with search query finds the managed admin: ${foundInList ? '✅ PASS' : '❌ FAIL'}`);
+      if (!foundInList) allPassed = false;
+
+      // D. Prevent self-deletion
+      const selfDeleteReq = makeRequest(`http://localhost:3000/api/super-admin/users/${TEST_ADMIN_USER_ID}`, {
+        method: 'DELETE',
+        headers: { 'x-user-id': TEST_ADMIN_USER_ID, 'x-user-email': TEST_ADMIN_EMAIL },
+      });
+      const selfDeleteRes = await userDelete(selfDeleteReq, { params: Promise.resolve({ id: TEST_ADMIN_USER_ID }) } as any);
+      const selfDeleteProtected = selfDeleteRes.status === 400;
+      console.log(`   - Self-deletion is guarded and rejected: ${selfDeleteProtected ? '✅ PASS' : '❌ FAIL'} (status ${selfDeleteRes.status})`);
+      if (!selfDeleteProtected) allPassed = false;
+
+      // E. Permanently delete the managed admin
+      const deleteReq = makeRequest(`http://localhost:3000/api/super-admin/users/${managedAdminUserId}`, {
+        method: 'DELETE',
+        headers: { 'x-user-id': TEST_ADMIN_USER_ID, 'x-user-email': TEST_ADMIN_EMAIL },
+      });
+      const deleteRes = await userDelete(deleteReq, { params: Promise.resolve({ id: managedAdminUserId! }) } as any);
+      const deleteSuccess = deleteRes.status === 200;
+      console.log(`   - SuperAdmin permanently deletes admin user: ${deleteSuccess ? '✅ PASS' : '❌ FAIL'} (status ${deleteRes.status})`);
+      if (!deleteSuccess) allPassed = false;
+
+      // Verify deletion from auth, users, and tenant_members
+      const { data: authGone } = await sb.auth.admin.getUserById(managedAdminUserId!);
+      const { data: memberGone } = await sb.from('tenant_members').select('id').eq('user_id', managedAdminUserId!);
+      const isCompletelyDeleted = !authGone?.user && (memberGone?.length || 0) === 0;
+      console.log(`   - Admin removed completely across Auth and database: ${isCompletelyDeleted ? '✅ PASS' : '❌ FAIL'}`);
+      if (!isCompletelyDeleted) allPassed = false;
+      managedAdminUserId = null; // already deleted
+    } catch (err) {
+      console.error('   - Admin lifecycle test error:', err);
+      allPassed = false;
+    } finally {
+      if (managedAdminUserId) {
+        await sb.from('tenant_members').delete().eq('user_id', managedAdminUserId);
+        await sb.auth.admin.deleteUser(managedAdminUserId).catch(() => {});
+      }
+    }
+
     // 4. Tenant suspend/reactivate via check_tenant_active RPC.
     console.log('\n4. Testing tenant suspend/reactivate + check_tenant_active RPC...');
     try {
@@ -160,11 +260,12 @@ export async function runSuperAdminTestSuite(): Promise<boolean> {
         .from('platform_audit_logs')
         .select('action')
         .eq('actor_email', TEST_ADMIN_EMAIL)
-        .in('action', ['user.ban', 'user.unban', 'organization.suspend', 'organization.reactivate']);
+        .in('action', ['user.create', 'user.update', 'user.delete', 'user.ban', 'user.unban', 'organization.suspend', 'organization.reactivate']);
 
       const actions = new Set((logs || []).map((l) => l.action));
-      const allLogged = ['user.ban', 'user.unban', 'organization.suspend', 'organization.reactivate'].every((a) => actions.has(a));
-      console.log(`   - All 4 mutating actions logged: ${allLogged ? '✅ PASS' : '❌ FAIL'} (found: ${Array.from(actions).join(', ')})`);
+      const requiredActions = ['user.create', 'user.update', 'user.delete', 'user.ban', 'user.unban', 'organization.suspend', 'organization.reactivate'];
+      const allLogged = requiredActions.every((a) => actions.has(a));
+      console.log(`   - All ${requiredActions.length} mutating actions logged: ${allLogged ? '✅ PASS' : '❌ FAIL'} (found: ${Array.from(actions).join(', ')})`);
       if (!allLogged) allPassed = false;
     } catch (err) {
       console.error('   - Audit log verification error:', err);

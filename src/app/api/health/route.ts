@@ -51,7 +51,7 @@ export async function GET() {
   return NextResponse.json({
     status: overallStatus,
     timestamp,
-    application: 'AIWhisper AI Support Engine',
+    application: 'AsstGPT AI Support Engine',
     environment: process.env.NODE_ENV || 'production',
     checks: {
       database: dbStatus,

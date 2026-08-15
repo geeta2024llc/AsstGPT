@@ -140,6 +140,26 @@ async function handleMessage(msg: WAMessage) {
     inFlightMessageIds.add(providerMessageId);
     setTimeout(() => inFlightMessageIds.delete(providerMessageId), 30_000);
 
+    // Tenant Suspension Check: Halt processing and automated replies if workspace is suspended
+    const { tenantId } = await db.ensureDefaultTenantAndChannel();
+    const supabaseAdmin = db.getSupabaseAdmin();
+    const { data: tenantRow } = await supabaseAdmin
+      .from('tenants')
+      .select('is_active')
+      .eq('id', tenantId)
+      .maybeSingle();
+
+    if (tenantRow && tenantRow.is_active === false) {
+      console.warn(`[SUSPENDED] Inbound WhatsApp message dropped for suspended tenant ${tenantId}`);
+      await db.addLog({
+        user: 'System',
+        action: 'Inbound Message Dropped',
+        details: `Tenant ${tenantId} is suspended. Inbound message from ${chatId} was halted.`,
+        type: 'warning',
+      });
+      return;
+    }
+
     // Extract message content and media attachments
     let messageContent = '';
     let mediaAttachment: MediaAttachment | undefined;

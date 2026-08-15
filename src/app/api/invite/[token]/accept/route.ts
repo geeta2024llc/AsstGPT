@@ -47,57 +47,68 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   }
 
   const admin = getSupabaseAdmin();
+  let createdUserId: string | null = null;
 
-  const { data: existing } = await admin.from('users').select('id').eq('email', invitation.email).maybeSingle();
-  if (existing) {
-    await revertInvitationClaim(invitation.id);
-    return NextResponse.json(
-      { error: 'An account already exists for this email. Please log in to accept this invitation.', existingAccount: true },
-      { status: 409 }
-    );
+  try {
+    const { data: existing } = await admin.from('users').select('id').eq('email', invitation.email).maybeSingle();
+    if (existing) {
+      await revertInvitationClaim(invitation.id);
+      return NextResponse.json(
+        { error: 'An account already exists for this email. Please log in to accept this invitation.', existingAccount: true },
+        { status: 409 }
+      );
+    }
+
+    const { data: created, error: createErr } = await admin.auth.admin.createUser({
+      email: invitation.email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: fullName },
+      app_metadata: { tenant_id: invitation.tenantId, role: invitation.role },
+    });
+
+    if (createErr || !created?.user) {
+      await revertInvitationClaim(invitation.id);
+      return NextResponse.json({ error: createErr?.message || 'Failed to create account' }, { status: 400 });
+    }
+    const userId = created.user.id;
+    createdUserId = userId;
+
+    const { error: memberErr } = await admin
+      .from('tenant_members')
+      .insert({ tenant_id: invitation.tenantId, user_id: userId, role: invitation.role });
+
+    if (memberErr) {
+      console.error('tenant_members insert failed for invite accept, rolling back:', memberErr);
+      await admin.auth.admin.deleteUser(userId).catch(() => {});
+      await revertInvitationClaim(invitation.id);
+      return NextResponse.json({ error: 'Failed to finish joining the workspace' }, { status: 500 });
+    }
+
+    // Membership is now durably created -- the invitation was validly
+    // consumed regardless of whether the sign-in step below succeeds.
+    const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+      email: invitation.email,
+      password,
+    });
+    if (signInErr || !signInData?.session) {
+      return NextResponse.json({ requiresLogin: true, tenantName: invitation.tenantName });
+    }
+
+    return NextResponse.json({
+      session: {
+        access_token: signInData.session.access_token,
+        refresh_token: signInData.session.refresh_token,
+        expires_at: signInData.session.expires_at,
+      },
+      tenantName: invitation.tenantName,
+    });
+  } catch (err) {
+    console.error('Unhandled exception during invitation accept, reverting claim:', err);
+    if (createdUserId) {
+      await admin.auth.admin.deleteUser(createdUserId).catch(() => {});
+    }
+    await revertInvitationClaim(invitation.id).catch(() => {});
+    return NextResponse.json({ error: 'An unexpected error occurred while accepting invitation' }, { status: 500 });
   }
-
-  const { data: created, error: createErr } = await admin.auth.admin.createUser({
-    email: invitation.email,
-    password,
-    email_confirm: true,
-    user_metadata: { full_name: fullName },
-    app_metadata: { tenant_id: invitation.tenantId, role: invitation.role },
-  });
-
-  if (createErr || !created?.user) {
-    await revertInvitationClaim(invitation.id);
-    return NextResponse.json({ error: createErr?.message || 'Failed to create account' }, { status: 400 });
-  }
-  const userId = created.user.id;
-
-  const { error: memberErr } = await admin
-    .from('tenant_members')
-    .insert({ tenant_id: invitation.tenantId, user_id: userId, role: invitation.role });
-
-  if (memberErr) {
-    console.error('tenant_members insert failed for invite accept, rolling back:', memberErr);
-    await admin.auth.admin.deleteUser(userId).catch(() => {});
-    await revertInvitationClaim(invitation.id);
-    return NextResponse.json({ error: 'Failed to finish joining the workspace' }, { status: 500 });
-  }
-
-  // Membership is now durably created -- the invitation was validly
-  // consumed regardless of whether the sign-in step below succeeds.
-  const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
-    email: invitation.email,
-    password,
-  });
-  if (signInErr || !signInData?.session) {
-    return NextResponse.json({ requiresLogin: true, tenantName: invitation.tenantName });
-  }
-
-  return NextResponse.json({
-    session: {
-      access_token: signInData.session.access_token,
-      refresh_token: signInData.session.refresh_token,
-      expires_at: signInData.session.expires_at,
-    },
-    tenantName: invitation.tenantName,
-  });
 }

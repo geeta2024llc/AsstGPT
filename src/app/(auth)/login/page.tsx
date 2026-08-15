@@ -34,6 +34,25 @@ function LoginForm() {
       if (data?.session) {
         // Set session cookie for middleware
         document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=604800; SameSite=Lax; secure`;
+
+        // Smart routing: check if this is a platform super admin
+        if (!searchParams.get('redirectTo')) {
+          try {
+            const meRes = await fetch('/api/super-admin/me', {
+              headers: { Authorization: `Bearer ${data.session.access_token}` },
+            });
+            if (meRes.ok) {
+              const meData = await meRes.json();
+              if (meData?.platformRole) {
+                router.push('/super-admin');
+                return;
+              }
+            }
+          } catch (_) {
+            // fallback to default redirect
+          }
+        }
+
         router.push(redirectTo);
       }
     } catch (err: any) {
@@ -129,21 +148,29 @@ export default function LoginPage() {
               <Sparkles className="w-7 h-7 text-emerald-400" />
             </div>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">AIWhisper Platform</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-white">AsstGPT Platform</h1>
           <p className="text-sm text-slate-400 mt-1">Autonomous WhatsApp & Omnichannel AI Agent</p>
         </div>
 
         {/* Glassmorphic Login Card */}
         <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-7 shadow-2xl shadow-black/60">
-          <div className="flex items-center gap-2 mb-6 text-xs uppercase tracking-wider font-semibold text-emerald-400">
-            <ShieldCheck className="w-4 h-4" /> Secure Operator Access
+          <div className="flex items-center justify-between gap-2 mb-6">
+            <div className="flex items-center gap-2 text-xs uppercase tracking-wider font-semibold text-emerald-400">
+              <ShieldCheck className="w-4 h-4" /> Secure Operator Access
+            </div>
+            <a
+              href="/super-admin/login"
+              className="text-[11px] font-semibold text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1"
+            >
+              Super Admin &rarr;
+            </a>
           </div>
 
           <Suspense fallback={<div className="py-8 text-center text-xs text-slate-500">Loading sign in...</div>}>
             <LoginForm />
           </Suspense>
 
-          <div className="mt-6 pt-5 border-t border-slate-800/80 text-center">
+          <div className="mt-6 pt-5 border-t border-slate-800/80 text-center space-y-2">
             <p className="text-xs text-slate-400">
               Need to set up a new organization?{' '}
               <a href="/signup" className="text-emerald-400 hover:text-emerald-300 font-medium underline underline-offset-2">

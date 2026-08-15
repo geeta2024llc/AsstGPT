@@ -32,7 +32,7 @@ async function generateContextualFollowUp(
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY || process.env.GOOGLE_API_KEY;
     if (!apiKey) return fallback;
 
-    const prompt = `You are a polite, helpful customer success agent for AIWhisper.
+    const prompt = `You are a polite, helpful customer success agent for AsstGPT.
 The customer has been inactive. Generate a 1-sentence, warm and natural follow-up check-in to ask if they need further help.
 Customer Name: ${customerName}
 

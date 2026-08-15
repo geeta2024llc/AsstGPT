@@ -214,7 +214,7 @@ export default function StandaloneWidgetPage() {
         </form>
         <div className="text-center mt-2">
           <span className="text-[10px] text-slate-500 inline-flex items-center gap-1 font-mono">
-            Powered by <strong className="text-slate-400 font-semibold">AIWhisper</strong>
+            Powered by <strong className="text-slate-400 font-semibold">AsstGPT</strong>
           </span>
         </div>
       </footer>

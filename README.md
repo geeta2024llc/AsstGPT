@@ -1,13 +1,13 @@
-# AIWhisper: The World's First Revolutionary AI-Powered WhatsApp Automation Suite
+# AsstGPT: The World's First Revolutionary AI-Powered WhatsApp Automation Suite
 
 
-**AIWhisper** is the groundbreaking, cutting-edge AI-driven WhatsApp bot platform that redefines messaging automation. As the world's first intelligent, autonomous conversational AI for WhatsApp, AIWhisper leverages state-of-the-art generative AI (powered by Gemini) and seamless integration with Baileys to deliver hyper-personalized, context-aware responses at scale. Built with Next.js and integrated with Google's Gemini AI, it enables businesses and developers to create intelligent WhatsApp bots that can handle customer inquiries, provide support, and automate messaging workflows.
+**AsstGPT** is the groundbreaking, cutting-edge AI-driven WhatsApp bot platform that redefines messaging automation. As the world's first intelligent, autonomous conversational AI for WhatsApp, AsstGPT leverages state-of-the-art generative AI (powered by Gemini) and seamless integration with Baileys to deliver hyper-personalized, context-aware responses at scale. Built with Next.js and integrated with Google's Gemini AI, it enables businesses and developers to create intelligent WhatsApp bots that can handle customer inquiries, provide support, and automate messaging workflows.
 
 <img width="1145" height="686" alt="image" src="https://github.com/user-attachments/assets/ea31d356-2a2e-4ac2-92c6-19c80f4f4813" />
 
 
-## Why AIWhisper? The Unique Edge
-- **World's First AI-Native WhatsApp Orchestrator**: Unlike traditional bots, AIWhisper's symbiotic fusion of Next.js frontend, Genkit AI backend, and real-time WhatsApp connectivity creates an unprecedented ecosystem for smart messaging.
+## Why AsstGPT? The Unique Edge
+- **World's First AI-Native WhatsApp Orchestrator**: Unlike traditional bots, AsstGPT's symbiotic fusion of Next.js frontend, Genkit AI backend, and real-time WhatsApp connectivity creates an unprecedented ecosystem for smart messaging.
 - **Intelligent Responses**: Context-aware replies using Gemini AI
 - **Easy Setup**: QR code authentication with WhatsApp Web
 - **Scalable Architecture**: Built on modern web technologies
@@ -110,4 +110,4 @@ We welcome contributions! Fork the repo, create a feature branch, and submit a p
 ## License
 MIT License – Free to use, modify, and distribute.
 
-Star this repo if AIWhisper revolutionizes your workflow! 🚀
+Star this repo if AsstGPT revolutionizes your workflow! 🚀

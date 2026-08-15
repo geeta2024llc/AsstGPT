@@ -61,13 +61,32 @@ export async function runPhase7TestSuite(): Promise<boolean> {
       allPassed = false;
     }
 
-    // Test 2: Updating role, availability status, and queues.
-    console.log('\n2. Testing Updating Role, Status & Queues...');
-    await updateTeamMember(testUserId, {
-      role: 'operator',
-      status: 'away',
-      assignedQueues: ['support', 'escalations'],
-    });
+    // Test 2: Updating role with last-admin guard, availability status, and queues.
+    console.log('\n2. Testing Updating Role, Status & Queues (with Last-Admin Confirmation)...');
+    let lastAdminBlocked = false;
+    try {
+      // Should be blocked without confirmLastAdmin
+      await updateTeamMember(testUserId, {
+        role: 'operator',
+      });
+    } catch (err: any) {
+      if (err.message?.includes('CONFIRMATION_REQUIRED_LAST_ADMIN')) {
+        lastAdminBlocked = true;
+      }
+    }
+    console.log(`   - Last admin demotion without confirmation blocked: ${lastAdminBlocked ? '✅ PASS' : '❌ FAIL'}`);
+    if (!lastAdminBlocked) allPassed = false;
+
+    // Now update with confirmation
+    await updateTeamMember(
+      testUserId,
+      {
+        role: 'operator',
+        status: 'away',
+        assignedQueues: ['support', 'escalations'],
+      },
+      { confirmLastAdmin: true }
+    );
 
     const updated = await getTeamMember(testUserId);
     console.log(`   - Updated Role: ${updated?.role} (Expected: "operator")`);
@@ -122,7 +141,7 @@ export async function runPhase7TestSuite(): Promise<boolean> {
 
     // Test 5: Removing membership revokes access (tenant_members row gone).
     console.log('\n5. Testing Member Removal...');
-    await deleteTeamMember(testUserId);
+    await deleteTeamMember(testUserId, { confirmLastAdmin: true });
     const afterDelete = await getTeamMember(testUserId);
     console.log(`   - Member Exists After Removal: ${afterDelete ? 'YES' : 'NO'}`);
 

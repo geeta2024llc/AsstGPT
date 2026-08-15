@@ -43,6 +43,7 @@ export default function WidgetConfigManager() {
   const { toast } = useToast();
 
   const [embedHost, setEmbedHost] = useState('');
+  const [workspaceKey, setWorkspaceKey] = useState('');
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -60,6 +61,15 @@ export default function WidgetConfigManager() {
         toast({ variant: 'destructive', title: 'Error', description: err.message });
       })
       .finally(() => setIsLoading(false));
+
+    fetch('/api/tenant')
+      .then(res => res.json())
+      .then(t => {
+        if (t?.slug || t?.id) {
+          setWorkspaceKey(t.slug || t.id);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const handleSave = async () => {
@@ -71,7 +81,11 @@ export default function WidgetConfigManager() {
         body: JSON.stringify(config),
       });
 
-      // Also trigger update via db
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || `Failed to save settings (HTTP ${res.status})`);
+      }
+
       toast({
         title: 'Widget Settings Saved',
         description: 'Live chat widget branding and greeting updated.',
@@ -83,7 +97,7 @@ export default function WidgetConfigManager() {
     }
   };
 
-  const embedSnippet = `<script src="${embedHost || 'https://your-domain.com'}/widget.js" defer></script>`;
+  const embedSnippet = `<script src="${embedHost || 'https://your-domain.com'}/widget.js"${workspaceKey ? ` data-workspace="${workspaceKey}"` : ''} defer></script>`;
 
   const copyEmbedSnippet = () => {
     navigator.clipboard.writeText(embedSnippet);
@@ -102,7 +116,7 @@ export default function WidgetConfigManager() {
             <span>Live Web Chat Widget</span>
           </h2>
           <p className="text-sm text-muted-foreground">
-            Embed a modern glassmorphic chat widget on any website to route visitor questions directly into AIWhisper.
+            Embed a modern glassmorphic chat widget on any website to route visitor questions directly into AsstGPT.
           </p>
         </div>
         <Button onClick={handleSave} disabled={isSaving || isLoading} className="gap-1.5 self-start sm:self-auto">

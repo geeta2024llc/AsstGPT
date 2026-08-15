@@ -1,6 +1,7 @@
 -- ============================================================================
--- AIWHISPER CONSOLIDATED PRODUCTION MIGRATION SCRIPT
--- Execute this script once in your Supabase SQL Editor (Dashboard -> SQL Editor -> New Query -> Run)
+-- AIWHISPER REPLICA SAFETY & DISTRIBUTED LEASE MIGRATION
+-- Applies multi-replica WhatsApp session safety, distributed CAS locks, and outbound queue.
+-- Foundation schemas (tenants, auth, channels, messages) are in 20260811000000_initial_schema.sql.
 -- ============================================================================
 
 -- 1. WhatsApp Session Lock & Replica Safety Tables

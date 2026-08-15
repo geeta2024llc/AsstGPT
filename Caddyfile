@@ -1,8 +1,8 @@
-# Caddy Reverse Proxy for AIWhisper Backend
+# Caddy Reverse Proxy for AsstGPT Backend
 # Automatically provisions free HTTPS SSL via Let's Encrypt / ZeroSSL
 
 {$DOMAIN_NAME:localhost} {
-    # Forward all API & backend traffic to AIWhisper container on port 9002
+    # Forward all API & backend traffic to AsstGPT container on port 9002
     reverse_proxy 127.0.0.1:9002 {
         header_up Host {host}
         header_up X-Real-IP {remote_host}

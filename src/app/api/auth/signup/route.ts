@@ -91,7 +91,10 @@ export async function POST(req: NextRequest) {
 
   if (createErr || !created?.user) {
     // Orphaned tenant with no members yet — safe to remove so the slug can be reused.
-    await admin.from('tenants').delete().eq('id', tenant.id);
+    const { error: cleanupErr } = await admin.from('tenants').delete().eq('id', tenant.id);
+    if (cleanupErr) {
+      console.error(`Failed to cleanup orphaned tenant ${tenant.id} during signup rollback:`, cleanupErr);
+    }
     const message = createErr?.message?.includes('already registered')
       ? 'An account with this email already exists'
       : createErr?.message || 'Failed to create account';

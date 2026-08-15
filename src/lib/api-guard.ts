@@ -10,19 +10,28 @@ export interface ApiAuthOptions {
 /**
  * Higher-order API route wrapper that establishes RequestContext AsyncLocalStorage
  * and enforces Role-Based Access Control (RBAC) on incoming requests.
+ * Supports both static routes and dynamic parameter routes.
  */
 export function withApiAuth(
   handler: (req: NextRequest, ctx: RequestContext) => Promise<NextResponse>,
   options?: ApiAuthOptions
+): (req: NextRequest) => Promise<NextResponse>;
+export function withApiAuth<RouteContext>(
+  handler: (req: NextRequest, ctx: RequestContext, routeContext: RouteContext) => Promise<NextResponse>,
+  options?: ApiAuthOptions
+): (req: NextRequest, routeContext: RouteContext) => Promise<NextResponse>;
+export function withApiAuth(
+  handler: (req: NextRequest, ctx: RequestContext, routeContext?: any) => Promise<NextResponse>,
+  options?: ApiAuthOptions
 ) {
-  return async (req: NextRequest): Promise<NextResponse> => {
+  return async (req: NextRequest, routeContext?: any): Promise<NextResponse> => {
     const authDisabled = process.env.AUTH_REQUIRED === 'false';
     const defaultTenantId = process.env.DEFAULT_TENANT_ID || '00000000-0000-0000-0000-000000000001';
 
     // Extract headers forwarded by verified middleware
     const tenantId = req.headers.get('x-tenant-id') || defaultTenantId;
     const userId = req.headers.get('x-user-id') || undefined;
-    const userRole = (req.headers.get('x-user-role') as RequestContext['userRole']) || 'admin';
+    const userRole = (req.headers.get('x-user-role') as RequestContext['userRole']) || 'operator';
     const authHeader = req.headers.get('authorization');
     const jwtToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
 
@@ -49,6 +58,6 @@ export function withApiAuth(
     }
 
     // Execute handler within the established AsyncLocalStorage context
-    return runWithRequestContext(ctx, () => handler(req, ctx));
+    return runWithRequestContext(ctx, () => handler(req, ctx, routeContext));
   };
 }

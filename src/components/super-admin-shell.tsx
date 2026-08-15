@@ -16,6 +16,8 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
 import {
   ShieldCheck,
   LayoutDashboard,
@@ -27,12 +29,13 @@ import {
   HeartPulse,
   ScrollText,
   ArrowLeftCircle,
+  LogOut,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/super-admin', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { href: '/super-admin/organizations', label: 'Organizations', icon: Building2 },
-  { href: '/super-admin/users', label: 'Users', icon: Users },
+  { href: '/super-admin/users', label: 'Admins & Users', icon: Users },
   { href: '/super-admin/whatsapp', label: 'WhatsApp', icon: MessageSquare },
   { href: '/super-admin/ai-usage', label: 'AI Usage & Cost', icon: Cpu },
   { href: '/super-admin/feature-flags', label: 'Feature Flags', icon: ToggleLeft },
@@ -42,6 +45,7 @@ const NAV_ITEMS = [
 
 export default function SuperAdminShell({ email, children }: { email: string; children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [platformRole, setPlatformRole] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -50,6 +54,12 @@ export default function SuperAdminShell({ email, children }: { email: string; ch
       .then((data) => setPlatformRole(data?.platformRole || null))
       .catch(() => {});
   }, []);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    document.cookie = 'sb-access-token=; path=/; max-age=0; SameSite=Lax; secure';
+    router.push('/super-admin/login');
+  };
 
   return (
     <SidebarProvider>
@@ -85,17 +95,29 @@ export default function SuperAdminShell({ email, children }: { email: string; ch
             <div className="flex items-center justify-between gap-2">
               <span className="truncate text-xs text-muted-foreground">{email}</span>
               {platformRole && (
-                <span className="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium capitalize text-muted-foreground">
+                <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium capitalize text-amber-400">
                   {platformRole.replace('_', ' ')}
                 </span>
               )}
             </div>
-            <Button variant="outline" size="sm" className="gap-1.5" asChild>
-              <Link href="/dashboard">
-                <ArrowLeftCircle className="h-3.5 w-3.5" />
-                <span>Back to App</span>
-              </Link>
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Button variant="outline" size="sm" className="gap-1.5 flex-1 text-xs" asChild>
+                <Link href="/dashboard">
+                  <ArrowLeftCircle className="h-3.5 w-3.5" />
+                  <span>Workspace</span>
+                </Link>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 cursor-pointer"
+                onClick={handleSignOut}
+                title="Sign out of platform session"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                <span className="group-data-[collapsible=icon]:hidden">Logout</span>
+              </Button>
+            </div>
           </div>
         </SidebarFooter>
       </Sidebar>

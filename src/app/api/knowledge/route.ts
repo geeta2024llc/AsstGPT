@@ -1,115 +1,128 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getKnowledgeFiles, addKnowledgeFile, updateKnowledgeFile, deleteKnowledgeFile, addLog } from '@/lib/db';
+import { withApiAuth } from '@/lib/api-guard';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
-  try {
-    const files = await getKnowledgeFiles();
-    return NextResponse.json(files);
-  } catch (error) {
-    console.error('Failed to get knowledge files:', error);
-    return NextResponse.json({ message: 'Failed to get knowledge files' }, { status: 500 });
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { fileName, fileType, content, enabled } = body;
-
-    if (!fileName || !content) {
-      return NextResponse.json({ message: 'Title and content are required.' }, { status: 400 });
+export const GET = withApiAuth(
+  async () => {
+    try {
+      const files = await getKnowledgeFiles();
+      return NextResponse.json(files);
+    } catch (error) {
+      console.error('Failed to get knowledge files:', error);
+      return NextResponse.json({ message: 'Failed to get knowledge files' }, { status: 500 });
     }
+  },
+  { roles: ['admin', 'operator', 'viewer'] }
+);
 
-    const newFile = await addKnowledgeFile({
-      fileName,
-      fileType: fileType || 'faq',
-      size: Buffer.byteLength(content, 'utf-8'),
-      content,
-      enabled: enabled !== false,
-      status: 'ready',
-    });
+export const POST = withApiAuth(
+  async (request: NextRequest, ctx) => {
+    try {
+      const body = await request.json();
+      const { fileName, fileType, content, enabled } = body;
 
-    await addLog({
-      user: 'Admin',
-      action: 'Created Knowledge Source',
-      details: `Added knowledge source "${fileName}" (${fileType || 'faq'}).`,
-      type: 'info',
-    });
+      if (!fileName || !content) {
+        return NextResponse.json({ message: 'Title and content are required.' }, { status: 400 });
+      }
 
-    return NextResponse.json(newFile, { status: 201 });
-  } catch (error) {
-    console.error('Failed to create knowledge file:', error);
-    return NextResponse.json({ message: (error as Error).message }, { status: 500 });
-  }
-}
+      const newFile = await addKnowledgeFile({
+        fileName,
+        fileType: fileType || 'faq',
+        size: Buffer.byteLength(content, 'utf-8'),
+        content,
+        enabled: enabled !== false,
+        status: 'ready',
+      });
 
-export async function PATCH(request: Request) {
-  try {
-    const body = await request.json();
-    const { id, fileName, fileType, content, enabled, status } = body;
+      await addLog({
+        user: ctx.userId || 'Admin',
+        action: 'Created Knowledge Source',
+        details: `Added knowledge source "${fileName}" (${fileType || 'faq'}).`,
+        type: 'info',
+      });
 
-    if (!id) {
-      return NextResponse.json({ message: 'Knowledge source ID is required.' }, { status: 400 });
+      return NextResponse.json(newFile, { status: 201 });
+    } catch (error) {
+      console.error('Failed to create knowledge file:', error);
+      return NextResponse.json({ message: (error as Error).message }, { status: 500 });
     }
+  },
+  { roles: ['admin', 'operator'] }
+);
 
-    const updateData: any = {};
-    if (fileName !== undefined) updateData.fileName = fileName;
-    if (fileType !== undefined) updateData.fileType = fileType;
-    if (content !== undefined) {
-      updateData.content = content;
-      updateData.size = Buffer.byteLength(content, 'utf-8');
+export const PATCH = withApiAuth(
+  async (request: NextRequest, ctx) => {
+    try {
+      const body = await request.json();
+      const { id, fileName, fileType, content, enabled, status } = body;
+
+      if (!id) {
+        return NextResponse.json({ message: 'Knowledge source ID is required.' }, { status: 400 });
+      }
+
+      const updateData: any = {};
+      if (fileName !== undefined) updateData.fileName = fileName;
+      if (fileType !== undefined) updateData.fileType = fileType;
+      if (content !== undefined) {
+        updateData.content = content;
+        updateData.size = Buffer.byteLength(content, 'utf-8');
+      }
+      if (enabled !== undefined) updateData.enabled = enabled;
+      if (status !== undefined) updateData.status = status;
+
+      await updateKnowledgeFile(id, updateData);
+
+      await addLog({
+        user: ctx.userId || 'Admin',
+        action: 'Updated Knowledge Source',
+        details: `Updated knowledge source ID "${id}". Enabled: ${enabled ?? 'unchanged'}, Status: ${status ?? 'ready'}`,
+        type: 'info',
+      });
+
+      return NextResponse.json({ message: 'Knowledge source updated successfully.' });
+    } catch (error) {
+      console.error('Failed to update knowledge file:', error);
+      return NextResponse.json({ message: (error as Error).message }, { status: 500 });
     }
-    if (enabled !== undefined) updateData.enabled = enabled;
-    if (status !== undefined) updateData.status = status;
+  },
+  { roles: ['admin', 'operator'] }
+);
 
-    await updateKnowledgeFile(id, updateData);
+export const DELETE = withApiAuth(
+  async (request: NextRequest, ctx) => {
+    try {
+      const { searchParams } = new URL(request.url);
+      const id = searchParams.get('id');
 
-    await addLog({
-      user: 'Admin',
-      action: 'Updated Knowledge Source',
-      details: `Updated knowledge source ID "${id}". Enabled: ${enabled ?? 'unchanged'}, Status: ${status ?? 'ready'}`,
-      type: 'info',
-    });
+      if (!id) {
+        return NextResponse.json({ message: 'File ID is required.' }, { status: 400 });
+      }
 
-    return NextResponse.json({ message: 'Knowledge source updated successfully.' });
-  } catch (error) {
-    console.error('Failed to update knowledge file:', error);
-    return NextResponse.json({ message: (error as Error).message }, { status: 500 });
-  }
-}
+      const files = await getKnowledgeFiles();
+      const fileToDelete = files.find(f => f.id === id);
 
-export async function DELETE(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
+      await deleteKnowledgeFile(id);
 
-    if (!id) {
-      return NextResponse.json({ message: 'File ID is required.' }, { status: 400 });
+      await addLog({
+        user: ctx.userId || 'Admin',
+        action: 'Deleted Knowledge Source',
+        details: `Knowledge source "${fileToDelete?.fileName || id}" was deleted.`,
+        type: 'info',
+      });
+
+      return NextResponse.json({ message: 'Knowledge source deleted successfully.' }, { status: 200 });
+    } catch (error) {
+      console.error('Failed to delete knowledge file:', error);
+      await addLog({
+        user: 'System',
+        action: 'Knowledge Deletion Failed',
+        details: (error as Error).message,
+        type: 'error',
+      });
+      return NextResponse.json({ message: 'Failed to delete knowledge file' }, { status: 500 });
     }
-
-    const files = await getKnowledgeFiles();
-    const fileToDelete = files.find(f => f.id === id);
-
-    await deleteKnowledgeFile(id);
-
-    await addLog({
-      user: 'Admin',
-      action: 'Deleted Knowledge Source',
-      details: `Knowledge source "${fileToDelete?.fileName || id}" was deleted.`,
-      type: 'info',
-    });
-
-    return NextResponse.json({ message: 'Knowledge source deleted successfully.' }, { status: 200 });
-  } catch (error) {
-    console.error('Failed to delete knowledge file:', error);
-    await addLog({
-      user: 'System',
-      action: 'Knowledge Deletion Failed',
-      details: (error as Error).message,
-      type: 'error',
-    });
-    return NextResponse.json({ message: 'Failed to delete knowledge file' }, { status: 500 });
-  }
-}
+  },
+  { roles: ['admin', 'operator'] }
+);

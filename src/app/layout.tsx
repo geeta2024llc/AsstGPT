@@ -4,7 +4,7 @@ import { ThemeProvider } from '@/components/theme-provider';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'AIWhisper',
+  title: 'AsstGPT',
   description: 'Manage WhatsApp communications with AI-powered agents.',
 };
 

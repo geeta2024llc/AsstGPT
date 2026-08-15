@@ -48,7 +48,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <Bot className="size-8 text-primary" />
             <div className="flex flex-col group-data-[collapsible=icon]:hidden">
               <span className="font-headline text-xl font-semibold">
-                AIWhisper
+                AsstGPT
               </span>
             </div>
           </div>
@@ -124,6 +124,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <Link href="/activity">
                   <History />
                   <span>Activity</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={pathname.startsWith('/settings')}
+                tooltip="Settings"
+              >
+                <Link href="/settings">
+                  <Settings />
+                  <span>Settings</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

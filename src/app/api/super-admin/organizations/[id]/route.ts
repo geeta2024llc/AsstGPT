@@ -142,6 +142,22 @@ export const DELETE = withPlatformAdminAuth<RouteContext>(async (req, ctx, route
     metadata: { name: tenant.name, slug: tenant.slug },
   });
 
+  // Clean up WhatsApp session locks and connection state associated with this tenant's channels
+  try {
+    const { data: channels } = await admin
+      .from('channels')
+      .select('id')
+      .eq('tenant_id', id);
+
+    if (channels && channels.length > 0) {
+      const channelIds = channels.map((c) => c.id);
+      await admin.from('whatsapp_session_lock').delete().in('channel_id', channelIds);
+      await admin.from('whatsapp_connection_state').delete().in('channel_id', channelIds);
+    }
+  } catch (cleanErr) {
+    console.warn(`[WARN] WhatsApp session cleanup for deleted tenant ${id} error:`, cleanErr);
+  }
+
   const { error: deleteErr } = await admin.from('tenants').delete().eq('id', id);
   if (deleteErr) {
     await logPlatformAction({

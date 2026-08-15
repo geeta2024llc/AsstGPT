@@ -5,6 +5,7 @@ import { timingSafeCompare } from '@/lib/security-utils';
 // Public endpoints accessible without authentication
 const PUBLIC_PATHS = [
   '/login',
+  '/super-admin/login',
   '/signup',
   '/invite',
   '/api/health',
@@ -20,7 +21,7 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // 1. Allow public static assets and auth endpoints
-  if (PUBLIC_PATHS.some((path) => pathname.startsWith(path))) {
+  if (PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(path + '/'))) {
     return NextResponse.next();
   }
 
@@ -45,9 +46,11 @@ export async function middleware(request: NextRequest) {
     token = sessionCookie;
   }
 
-  let resolvedTenantId = defaultTenantId;
+  const isSuperAdminRoute = pathname.startsWith('/super-admin') || pathname.startsWith('/api/super-admin');
+
+  let resolvedTenantId = '';
   let resolvedUserId = '00000000-0000-0000-0000-000000000001';
-  let resolvedUserRole = 'admin';
+  let resolvedUserRole = 'operator';
   let resolvedUserEmail = '';
   let isAuthenticated = false;
   let checkTenantSuspension = false;
@@ -76,15 +79,27 @@ export async function middleware(request: NextRequest) {
             isAuthenticated = true;
             resolvedUserId = user.id;
             resolvedUserEmail = user.email || '';
-            resolvedTenantId =
+            const tenantId =
               user.app_metadata?.tenant_id ||
-              user.user_metadata?.tenant_id ||
-              defaultTenantId;
+              user.user_metadata?.tenant_id;
+            
+            if (tenantId) {
+              resolvedTenantId = tenantId;
+              checkTenantSuspension = true;
+            } else if (isSuperAdminRoute) {
+              // Platform super-admins do not require a tenant context
+              resolvedTenantId = '';
+              checkTenantSuspension = false;
+            } else {
+              // Authenticated user with no workspace claim — fail closed
+              resolvedTenantId = '';
+              checkTenantSuspension = false;
+            }
+
             resolvedUserRole =
               user.app_metadata?.role ||
               user.user_metadata?.role ||
               'operator';
-            checkTenantSuspension = true;
           }
         }
       } catch (_) {
@@ -101,14 +116,32 @@ export async function middleware(request: NextRequest) {
         { status: 401 }
       );
     }
-    const loginUrl = new URL('/login', request.url);
+    const targetLogin = isSuperAdminRoute ? '/super-admin/login' : '/login';
+    const loginUrl = new URL(targetLogin, request.url);
     loginUrl.searchParams.set('redirectTo', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
+  // 3a. If user is authenticated but has no tenant assignment on a tenant route, fail closed
+  if (!authDisabled && isAuthenticated && !isSuperAdminRoute && !resolvedTenantId) {
+    // Allow public/auth-exempt routes
+    if (pathname.startsWith('/api/auth/') || pathname.startsWith('/api/invite/') || pathname === '/api/tenant/switch') {
+      // allow through to auth/invitation handlers
+    } else if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { error: 'Forbidden: No active workspace membership assigned to this account.' },
+        { status: 403 }
+      );
+    } else {
+      const unassignedUrl = new URL('/login', request.url);
+      unassignedUrl.searchParams.set('unassigned', '1');
+      return NextResponse.redirect(unassignedUrl);
+    }
+  }
+
   // 3b. Reject requests from members of a super-admin-suspended tenant.
-  // Fail-closed on any error, consistent with the auth check above.
-  if (!authDisabled && checkTenantSuspension && supabaseUrl && supabaseAnonKey) {
+  // Never run tenant suspension checks on platform-level super-admin routes.
+  if (!authDisabled && !isSuperAdminRoute && checkTenantSuspension && resolvedTenantId && supabaseUrl && supabaseAnonKey) {
     try {
       const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/check_tenant_active`, {
         method: 'POST',

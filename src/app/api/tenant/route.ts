@@ -68,8 +68,12 @@ export const PATCH = withApiAuth(
 
       if (body.notificationSettings !== undefined) {
         const ns = body.notificationSettings || {};
+        const notifyEmail = ns.notifyEmail ? String(ns.notifyEmail).trim() : '';
+        if (notifyEmail && !EMAIL_RE.test(notifyEmail)) {
+          return NextResponse.json({ message: 'Notification email is not a valid email address' }, { status: 400 });
+        }
         update.notificationSettings = {
-          notifyEmail: ns.notifyEmail ? String(ns.notifyEmail).trim() : undefined,
+          notifyEmail: notifyEmail || undefined,
           emailOnNewConversation: !!ns.emailOnNewConversation,
           emailOnHandoffRequested: !!ns.emailOnHandoffRequested,
           emailDailyDigest: !!ns.emailDailyDigest,

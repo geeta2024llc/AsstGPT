@@ -146,7 +146,7 @@ export default function WorkspaceSettingsManager() {
             <Building2 className="h-5 w-5 text-primary" />
             <span>Company Profile</span>
           </CardTitle>
-          <CardDescription>How your workspace is identified across AIWhisper.</CardDescription>
+          <CardDescription>How your workspace is identified across AsstGPT.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4">

@@ -1,6 +1,6 @@
 (function () {
-  if (window.AIWhisperWidgetInitialized) return;
-  window.AIWhisperWidgetInitialized = true;
+  if (window.AsstGPTWidgetInitialized) return;
+  window.AsstGPTWidgetInitialized = true;
 
   // Determine host domain
   const scriptTag = document.currentScript || Array.from(document.querySelectorAll('script')).find(s => s.src && s.src.includes('widget.js'));
@@ -112,7 +112,7 @@
         const iframe = document.createElement('iframe');
         iframe.id = 'aiwhisper-widget-iframe';
         iframe.src = `${baseUrl}/widget`;
-        iframe.title = 'AIWhisper Live Support Chat';
+        iframe.title = 'AsstGPT Live Support Chat';
         iframeContainer.appendChild(iframe);
         iframeLoaded = true;
       }

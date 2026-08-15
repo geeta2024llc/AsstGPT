@@ -819,6 +819,19 @@ export async function updateAgent(id: string, update: Partial<Omit<Agent, 'id'>>
     const supabase = getSupabaseAdmin();
     const { tenantId } = await ensureDefaultTenantAndChannel();
 
+    // 0. Verify agent ownership strictly before touching core row or child settings
+    const { data: targetAgent, error: agentLookupErr } = await supabase
+      .from('agents')
+      .select('id')
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+
+    if (agentLookupErr || !targetAgent) {
+      console.warn(`[SECURITY] updateAgent blocked: agent ${id} does not belong to tenant ${tenantId}`);
+      return undefined;
+    }
+
     // 1. Update agent core fields
     const agentFields: any = {};
     if (update.name !== undefined) agentFields.name = update.name;
@@ -1226,7 +1239,8 @@ export async function getTeamMember(userId: string): Promise<TeamMember | undefi
 
 export async function updateTeamMember(
   userId: string,
-  update: { role?: UserRole; status?: UserStatus; assignedQueues?: string[]; avatarUrl?: string }
+  update: { role?: UserRole; status?: UserStatus; assignedQueues?: string[]; avatarUrl?: string },
+  options?: { confirmLastAdmin?: boolean }
 ): Promise<void> {
   try {
     const supabase = getSupabaseAdmin();
@@ -1249,6 +1263,20 @@ export async function updateTeamMember(
       throw new Error('Ownership cannot be granted through this action');
     }
 
+    // Check last-admin guard if demoting an admin
+    if (existing.role === 'admin' && update.role && update.role !== 'admin' && !options?.confirmLastAdmin) {
+      const { data: otherAdmins } = await supabase
+        .from('tenant_members')
+        .select('user_id')
+        .eq('tenant_id', tenantId)
+        .eq('role', 'admin')
+        .neq('user_id', userId);
+      
+      if (!otherAdmins || otherAdmins.length === 0) {
+        throw new Error('CONFIRMATION_REQUIRED_LAST_ADMIN: This user is the last remaining administrator (aside from the owner). Confirmation is required to demote them.');
+      }
+    }
+
     const payload: Record<string, unknown> = {};
     if (update.role !== undefined) payload.role = update.role;
     if (update.status !== undefined) payload.status = update.status;
@@ -1265,13 +1293,30 @@ export async function updateTeamMember(
       console.error(`Failed to update tenant member ${userId}:`, error);
       throw error;
     }
+
+    // Synchronize Supabase Auth app_metadata live so active sessions reflect the new role immediately
+    if (update.role !== undefined) {
+      try {
+        await supabase.auth.admin.updateUserById(userId, {
+          app_metadata: {
+            tenant_id: tenantId,
+            role: update.role,
+          },
+        });
+      } catch (authErr) {
+        console.warn(`[WARN] Could not sync app_metadata for user ${userId}:`, authErr);
+      }
+    }
   } catch (err) {
     console.error(`Error in updateTeamMember(${userId}):`, err);
     throw err;
   }
 }
 
-export async function deleteTeamMember(userId: string): Promise<void> {
+export async function deleteTeamMember(
+  userId: string,
+  options?: { confirmLastAdmin?: boolean }
+): Promise<void> {
   try {
     const supabase = getSupabaseAdmin();
     const { tenantId } = await ensureDefaultTenantAndChannel();
@@ -1290,6 +1335,20 @@ export async function deleteTeamMember(userId: string): Promise<void> {
       throw new Error('The workspace owner cannot be removed');
     }
 
+    // Check last-admin guard if removing an admin
+    if (existing.role === 'admin' && !options?.confirmLastAdmin) {
+      const { data: otherAdmins } = await supabase
+        .from('tenant_members')
+        .select('user_id')
+        .eq('tenant_id', tenantId)
+        .eq('role', 'admin')
+        .neq('user_id', userId);
+
+      if (!otherAdmins || otherAdmins.length === 0) {
+        throw new Error('CONFIRMATION_REQUIRED_LAST_ADMIN: This user is the last remaining administrator (aside from the owner). Confirmation is required to remove them.');
+      }
+    }
+
     const { error } = await supabase
       .from('tenant_members')
       .delete()
@@ -1299,6 +1358,36 @@ export async function deleteTeamMember(userId: string): Promise<void> {
     if (error) {
       console.error(`Failed to delete tenant member ${userId}:`, error);
       throw error;
+    }
+
+    // Re-synchronize or revoke Auth app_metadata live
+    try {
+      const { data: remainingMemberships } = await supabase
+        .from('tenant_members')
+        .select('tenant_id, role')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: true });
+
+      if (remainingMemberships && remainingMemberships.length > 0) {
+        // User is still a member of other workspaces; reassign active workspace claim to their next workspace
+        const nextTenant = remainingMemberships[0];
+        await supabase.auth.admin.updateUserById(userId, {
+          app_metadata: {
+            tenant_id: nextTenant.tenant_id,
+            role: nextTenant.role,
+          },
+        });
+      } else {
+        // User has no remaining workspaces; revoke tenant access immediately
+        await supabase.auth.admin.updateUserById(userId, {
+          app_metadata: {
+            tenant_id: null,
+            role: null,
+          },
+        });
+      }
+    } catch (authErr) {
+      console.warn(`[WARN] Could not update app_metadata for removed user ${userId}:`, authErr);
     }
   } catch (err) {
     console.error(`Error in deleteTeamMember(${userId}):`, err);
@@ -2648,10 +2737,10 @@ const DEFAULT_WIDGET_CONFIG: WidgetConfig = {
   allowedOrigins: ['*'],
 };
 
-export async function getWidgetConfig(): Promise<WidgetConfig> {
+export async function getWidgetConfig(explicitTenantId?: string): Promise<WidgetConfig> {
   try {
     const supabase = getSupabaseAdmin();
-    const { tenantId } = await ensureDefaultTenantAndChannel();
+    const { tenantId } = await ensureDefaultTenantAndChannel(explicitTenantId);
 
     const { data: tenant, error } = await supabase
       .from('tenants')
@@ -2673,11 +2762,11 @@ export async function getWidgetConfig(): Promise<WidgetConfig> {
   }
 }
 
-export async function updateWidgetConfig(config: Partial<WidgetConfig>): Promise<WidgetConfig> {
+export async function updateWidgetConfig(config: Partial<WidgetConfig>, explicitTenantId?: string): Promise<WidgetConfig> {
   const supabase = getSupabaseAdmin();
-  const { tenantId } = await ensureDefaultTenantAndChannel();
+  const { tenantId } = await ensureDefaultTenantAndChannel(explicitTenantId);
 
-  const current = await getWidgetConfig();
+  const current = await getWidgetConfig(tenantId);
   const updated: WidgetConfig = {
     ...current,
     ...config,

@@ -4,18 +4,12 @@ import { withApiAuth } from '@/lib/api-guard';
 
 export const dynamic = 'force-dynamic';
 
-// :id is the member's user_id (tenant_members.user_id / auth user id) --
-// full name and email are no longer editable here since they belong to the
-// member's real account, not a directory entry.
+type RouteContext = { params: Promise<{ id: string }> };
 
-export const GET = withApiAuth(
-  async (
-    _request: NextRequest,
-    _ctx
-  ) => {
+export const GET = withApiAuth<RouteContext>(
+  async (_request: NextRequest, _ctx, { params }) => {
     try {
-      const url = new URL(_request.url);
-      const id = url.pathname.split('/').pop() || '';
+      const { id } = await params;
       const member = await getTeamMember(id);
 
       if (!member) {
@@ -31,11 +25,10 @@ export const GET = withApiAuth(
   { roles: ['admin', 'operator', 'viewer'] }
 );
 
-export const PUT = withApiAuth(
-  async (request: NextRequest, ctx) => {
+export const PUT = withApiAuth<RouteContext>(
+  async (request: NextRequest, ctx, { params }) => {
     try {
-      const url = new URL(request.url);
-      const id = url.pathname.split('/').pop() || '';
+      const { id } = await params;
       const body = await request.json();
 
       const existing = await getTeamMember(id);
@@ -43,12 +36,16 @@ export const PUT = withApiAuth(
         return NextResponse.json({ message: 'Team member not found' }, { status: 404 });
       }
 
-      await updateTeamMember(id, {
-        role: body.role,
-        status: body.status,
-        assignedQueues: body.assignedQueues,
-        avatarUrl: body.avatarUrl,
-      });
+      await updateTeamMember(
+        id,
+        {
+          role: body.role,
+          status: body.status,
+          assignedQueues: body.assignedQueues,
+          avatarUrl: body.avatarUrl,
+        },
+        { confirmLastAdmin: !!body.confirmLastAdmin }
+      );
 
       await addLog({
         user: ctx.userId || 'Administrator',
@@ -67,18 +64,19 @@ export const PUT = withApiAuth(
   { roles: ['admin'] }
 );
 
-export const DELETE = withApiAuth(
-  async (request: NextRequest, ctx) => {
+export const DELETE = withApiAuth<RouteContext>(
+  async (request: NextRequest, ctx, { params }) => {
     try {
+      const { id } = await params;
       const url = new URL(request.url);
-      const id = url.pathname.split('/').pop() || '';
-      const existing = await getTeamMember(id);
+      const confirmLastAdmin = url.searchParams.get('confirmLastAdmin') === 'true';
 
+      const existing = await getTeamMember(id);
       if (!existing) {
         return NextResponse.json({ message: 'Team member not found' }, { status: 404 });
       }
 
-      await deleteTeamMember(id);
+      await deleteTeamMember(id, { confirmLastAdmin });
 
       await addLog({
         user: ctx.userId || 'Administrator',

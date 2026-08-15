@@ -61,7 +61,7 @@ export default function SignupPage() {
               <Sparkles className="w-7 h-7 text-emerald-400" />
             </div>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">Create AIWhisper Workspace</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-white">Create AsstGPT Workspace</h1>
           <p className="text-sm text-slate-400 mt-1">Autonomous 24/7 AI-driven customer support</p>
         </div>
 
