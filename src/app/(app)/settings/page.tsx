@@ -11,9 +11,10 @@ import {
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Sun, Moon, Sparkles, ShieldAlert, Sliders, MessageSquareQuote, Webhook, MessageSquare, Users, Clock, Users2, Building2 } from 'lucide-react';
+import { Sun, Moon, Sparkles, ShieldAlert, Sliders, MessageSquareQuote, Webhook, MessageSquare, Users, Clock, Users2, Building2, UserCircle } from 'lucide-react';
 import { useSettings } from '@/hooks/use-settings';
 import WorkspaceSettingsManager from '@/components/workspace-settings-manager';
+import AccountSettingsManager from '@/components/account-settings-manager';
 import HandoffRulesManager from '@/components/handoff-rules-manager';
 import CannedResponsesManager from '@/components/canned-responses-manager';
 import WebhookManager from '@/components/webhook-manager';
@@ -37,10 +38,14 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="workspace" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-9 max-w-6xl">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-10 max-w-6xl">
           <TabsTrigger value="workspace" className="flex items-center gap-1.5 text-xs">
             <Building2 className="h-3.5 w-3.5" />
             <span>Workspace</span>
+          </TabsTrigger>
+          <TabsTrigger value="account" className="flex items-center gap-1.5 text-xs">
+            <UserCircle className="h-3.5 w-3.5" />
+            <span>Account</span>
           </TabsTrigger>
           <TabsTrigger value="handoff" className="flex items-center gap-1.5 text-xs">
             <ShieldAlert className="h-3.5 w-3.5" />
@@ -79,6 +84,11 @@ export default function SettingsPage() {
         {/* Tab 0: Workspace Profile, Notifications, Plan */}
         <TabsContent value="workspace" className="space-y-6">
           <WorkspaceSettingsManager />
+        </TabsContent>
+
+        {/* Tab 0b: Personal Account, Logout & Delete Account */}
+        <TabsContent value="account" className="space-y-6">
+          <AccountSettingsManager />
         </TabsContent>
 
         {/* Tab 1: Automated Handoff & Routing Rules */}

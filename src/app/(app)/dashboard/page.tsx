@@ -918,11 +918,16 @@ export default function DashboardPage() {
         </Card>
 
         <Card className="bg-card/60">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-headline flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-primary" /> WhatsApp Channel Telemetry
-            </CardTitle>
-            <CardDescription>Authenticated WhatsApp account status & session lease</CardDescription>
+          <CardHeader className="pb-3 flex flex-row items-start justify-between gap-2">
+            <div>
+              <CardTitle className="text-base font-headline flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-primary" /> WhatsApp Channel Telemetry
+              </CardTitle>
+              <CardDescription>Authenticated WhatsApp account status & session lease</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/whatsapp">Manage Connection</Link>
+            </Button>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-center sm:text-left">

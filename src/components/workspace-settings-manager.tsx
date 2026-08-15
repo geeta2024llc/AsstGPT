@@ -299,7 +299,7 @@ export default function WorkspaceSettingsManager() {
           <CardDescription>Managed on their own dedicated screens.</CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <a href="/inbox" className="flex items-center justify-between rounded-xl border p-3 hover:bg-muted/50 transition-colors">
+          <a href="/whatsapp" className="flex items-center justify-between rounded-xl border p-3 hover:bg-muted/50 transition-colors">
             <div className="flex items-center gap-2">
               <MessageSquare className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-medium">WhatsApp Connection</span>

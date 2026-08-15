@@ -16,6 +16,7 @@ import qr from 'qrcode';
 import path from 'path';
 import fs from 'fs/promises';
 import * as db from './db';
+import { getSupabaseAdmin } from './supabase';
 import { generateAIResponse, retrieveRelevantKnowledgeContext, transcribeAudio, type MediaAttachment } from './ai';
 import { generateSpeechAudio } from './tts';
 import { evaluateHandoffRules, calculateAIConfidence } from './handoff-engine';
@@ -142,7 +143,7 @@ async function handleMessage(msg: WAMessage) {
 
     // Tenant Suspension Check: Halt processing and automated replies if workspace is suspended
     const { tenantId } = await db.ensureDefaultTenantAndChannel();
-    const supabaseAdmin = db.getSupabaseAdmin();
+    const supabaseAdmin = getSupabaseAdmin();
     const { data: tenantRow } = await supabaseAdmin
       .from('tenants')
       .select('is_active')
