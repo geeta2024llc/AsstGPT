@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { getAnalyticsData } from '../../src/lib/analytics';
 import { getSupabaseAdmin } from '../../src/lib/supabase';
+import { getAnalyticsResetAt } from '../../src/lib/db';
 
 import { subDays, startOfDay } from 'date-fns';
 
@@ -34,11 +35,13 @@ export async function runAnalyticsTestSuite(): Promise<boolean> {
   console.log('\n2. Cross-Checking Metrics Against Supabase DB Queries...');
   const now = new Date();
   const startDate7d = subDays(startOfDay(now), 7 - 1).toISOString();
+  const resetAt = await getAnalyticsResetAt(tenantId);
+  const effectiveStartDate7d = resetAt && resetAt > startDate7d ? resetAt : startDate7d;
 
-  const { count: realConvoCount } = await sb.from('conversations').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('created_at', startDate7d);
-  const { count: realMsgCount } = await sb.from('messages').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('created_at', startDate7d);
+  const { count: realConvoCount } = await sb.from('conversations').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('created_at', effectiveStartDate7d);
+  const { count: realMsgCount } = await sb.from('messages').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('created_at', effectiveStartDate7d);
   const { count: realAgentCount } = await sb.from('agents').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('status', 'active');
-  const { count: realErrCount } = await sb.from('audit_logs').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('log_type', 'error').gte('created_at', startDate7d);
+  const { count: realErrCount } = await sb.from('audit_logs').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('log_type', 'error').gte('created_at', effectiveStartDate7d);
 
   const convosMatch = data7d.kpis.totalConversations === (realConvoCount || 0);
   const msgsMatch = data7d.kpis.totalMessages === (realMsgCount || 0);
@@ -77,6 +80,23 @@ export async function runAnalyticsTestSuite(): Promise<boolean> {
   data7d.agentPerformance.forEach(ag => {
     console.log(`   - Agent "${ag.name}": status=${ag.status}, handled=${ag.conversationsHandled}, aiResponses=${ag.aiResponses}, failures=${ag.failures}`);
   });
+
+  // Test 6: Dashboard Analytics Reset Checkpoint
+  console.log('\n6. Testing Dashboard Analytics Reset Checkpoint...');
+  try {
+    const { resetAnalyticsBaseline } = await import('../../src/lib/db');
+    await resetAnalyticsBaseline(tenantId);
+    const updatedResetAt = await getAnalyticsResetAt(tenantId);
+    if (updatedResetAt) {
+      console.log(`   - Analytics Reset Baseline: ✅ PASS (reset_at: ${updatedResetAt})`);
+    } else {
+      console.log('   - Analytics Reset Baseline: ❌ FAIL (timestamp not persisted)');
+      allPassed = false;
+    }
+  } catch (err) {
+    console.error('   - Analytics Reset Baseline Error:', err);
+    allPassed = false;
+  }
 
   return allPassed;
 }

@@ -224,7 +224,10 @@ export default function DashboardPage() {
     setIsResettingData(true);
     try {
       const res = await fetch('/api/analytics/reset', { method: 'POST' });
-      if (!res.ok) throw new Error(`Reset failed (HTTP ${res.status})`);
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        throw new Error(errorData?.message || errorData?.error || `Reset failed (HTTP ${res.status})`);
+      }
 
       toast({
         title: 'Dashboard Reset',
