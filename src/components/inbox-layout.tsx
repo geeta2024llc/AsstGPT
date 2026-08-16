@@ -927,8 +927,18 @@ export default function InboxLayout() {
               placeholder="Search contacts or numbers..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-8 text-xs pl-8 bg-background rounded-lg border-border/80"
+              className="h-8 text-xs pl-8 pr-7 bg-background/80 rounded-lg border-border/80 focus-visible:ring-1 focus-visible:ring-primary"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs p-0.5 rounded cursor-pointer"
+                title="Clear search"
+              >
+                ✕
+              </button>
+            )}
           </div>
 
           {/* Quick Filter Section: All, Starred, Handoff, Auto AI, Resolved, Churned */}
@@ -1070,9 +1080,11 @@ export default function InboxLayout() {
                   key={`${convo.id}_${idx}`}
                   onClick={() => handleSelectConversation(convo)}
                   className={cn(
-                    'flex cursor-pointer items-start gap-3 p-3 transition-colors hover:bg-muted/50 border-b border-border/40',
-                    selectedConversationId === convo.id && 'bg-muted/80',
-                    isResolved && 'opacity-70 bg-muted/20'
+                    'flex cursor-pointer items-start gap-3 p-3 transition-all border-b border-border/40 border-l-[3px]',
+                    selectedConversationId === convo.id
+                      ? 'bg-muted/70 dark:bg-muted/40 border-l-primary shadow-xs'
+                      : 'border-l-transparent hover:bg-muted/30',
+                    isResolved && 'opacity-70'
                   )}
                 >
                   <div className="relative shrink-0 mt-0.5">
@@ -1132,7 +1144,7 @@ export default function InboxLayout() {
                       </p>
                     )}
 
-                    <p className="truncate text-xs text-muted-foreground mb-1.5">
+                    <p className="truncate text-xs text-muted-foreground/90 mb-1.5 line-clamp-1">
                       {convo.lastMessage.text || 'No messages yet'}
                     </p>
 
@@ -1170,7 +1182,7 @@ export default function InboxLayout() {
                       )}
 
                       {convo.unreadCount > 0 && (
-                        <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                        <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground shadow-xs">
                           {convo.unreadCount}
                         </span>
                       )}
@@ -1766,57 +1778,69 @@ export default function InboxLayout() {
                 )}
               </div>
 
-              <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-                {/* Quick Replies Dialog Trigger (Message Mode only) */}
-                {composerMode === 'message' && (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      type="button"
-                      onClick={() => setIsCannedDialogOpen(true)}
-                      className="h-9 w-9 text-muted-foreground hover:text-primary"
-                      title="Browse Quick Replies"
-                    >
-                      <MessageSquareQuote className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" type="button" className="h-9 w-9 text-muted-foreground">
-                      <Paperclip className="h-4 w-4" />
-                    </Button>
-                  </>
-                )}
-
-                <Input
-                  ref={inputRef}
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  onKeyDown={handleKeyDownInComposer}
-                  placeholder={
-                    composerMode === 'note'
-                      ? 'Add an internal team note (press Enter to save)...'
-                      : isSelectedConvoPaused
-                      ? 'Reply directly to customer (type / for quick replies)...'
-                      : 'Type WhatsApp reply (type / for quick replies)...'
-                  }
-                  className={cn(
-                    'flex-1 h-9 text-sm',
-                    composerMode === 'note'
-                      ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-500/40 text-amber-950 dark:text-amber-100 placeholder:text-amber-700/60 dark:placeholder:text-amber-300/60'
-                      : 'bg-background'
+              <form onSubmit={handleSendMessage} className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  {/* Quick Replies Dialog Trigger (Message Mode only) */}
+                  {composerMode === 'message' && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        type="button"
+                        onClick={() => setIsCannedDialogOpen(true)}
+                        className="h-9 w-9 text-muted-foreground hover:text-primary shrink-0 cursor-pointer rounded-lg hover:bg-muted"
+                        title="Browse Quick Replies (or type / in message box)"
+                      >
+                        <MessageSquareQuote className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" type="button" className="h-9 w-9 text-muted-foreground shrink-0 cursor-pointer rounded-lg hover:bg-muted" title="Attach file">
+                        <Paperclip className="h-4 w-4" />
+                      </Button>
+                    </>
                   )}
-                />
 
-                <Button
-                  type="submit"
-                  size="icon"
-                  className={cn(
-                    'h-9 w-9',
-                    composerMode === 'note' && 'bg-amber-500 hover:bg-amber-600 text-white'
+                  <Input
+                    ref={inputRef}
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    onKeyDown={handleKeyDownInComposer}
+                    placeholder={
+                      composerMode === 'note'
+                        ? 'Add an internal team note (press Enter to save)...'
+                        : isSelectedConvoPaused
+                        ? 'Reply directly to customer (type / for quick replies)...'
+                        : 'Type WhatsApp reply (type / for quick replies)...'
+                    }
+                    className={cn(
+                      'flex-1 h-9 text-sm rounded-lg shadow-none',
+                      composerMode === 'note'
+                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-500/40 text-amber-950 dark:text-amber-100 placeholder:text-amber-700/60 dark:placeholder:text-amber-300/60 focus-visible:ring-amber-500'
+                        : 'bg-background focus-visible:ring-primary'
+                    )}
+                  />
+
+                  <Button
+                    type="submit"
+                    size="icon"
+                    className={cn(
+                      'h-9 w-9 shrink-0 cursor-pointer rounded-lg shadow-xs transition-all',
+                      composerMode === 'note'
+                        ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                        : 'bg-primary hover:bg-primary/90 text-primary-foreground'
+                    )}
+                    disabled={!newMessage.trim()}
+                    title={composerMode === 'note' ? 'Save team note (Enter)' : 'Send WhatsApp reply (Enter)'}
+                  >
+                    {composerMode === 'note' ? <StickyNote className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+                  </Button>
+                </div>
+
+                <div className="flex items-center justify-between text-[10px] text-muted-foreground px-1 select-none">
+                  <span>Press <kbd className="px-1 py-0.2 rounded bg-muted font-mono text-[9px] border">Enter ↵</kbd> to send • <kbd className="px-1 py-0.2 rounded bg-muted font-mono text-[9px] border">Shift+Enter</kbd> for new line</span>
+                  {composerMode === 'message' && (
+                    <span className="hidden sm:inline opacity-80">Type <kbd className="px-1 py-0.2 rounded bg-muted font-mono text-[9px] border">/</kbd> for quick canned replies</span>
                   )}
-                  disabled={!newMessage.trim()}
-                >
-                  {composerMode === 'note' ? <StickyNote className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-                </Button>
+                </div>
               </form>
             </footer>
           </>

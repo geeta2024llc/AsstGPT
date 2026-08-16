@@ -107,8 +107,9 @@ export function formatPhoneNumber(raw?: string): string {
  */
 export function formatContactName(name?: string, fallbackId?: string): string {
   const cleanName = (name || '').trim();
+  const cleanFallback = (fallbackId || '').trim();
 
-  // If we have a valid non-synthetic name containing letters, use it
+  // 1. If name is authentic and not synthetic, use it
   if (cleanName && !isSyntheticOrGenericName(cleanName)) {
     const hasLetters = /[a-zA-Z\u0900-\u097F]/.test(cleanName);
     if (hasLetters) {
@@ -116,21 +117,35 @@ export function formatContactName(name?: string, fallbackId?: string): string {
     }
   }
 
-  // If name is synthetic, numeric or missing, format the recipient phone number
-  const candidate = fallbackId || cleanName || '';
-  const isLid = candidate.endsWith('@lid') || (fallbackId && fallbackId.endsWith('@lid'));
-  const cleanedDigits = candidate.replace(/@(s\.whatsapp\.net|lid|c\.us)/g, '').replace(/\D/g, '');
-
-  if (isLid && cleanedDigits.length >= 4) {
-    return `WhatsApp User (${cleanedDigits.slice(-4)})`;
+  // 2. If fallbackId is authentic and not synthetic, use it (e.g. "Manav Shah", "Sherpa Mingma")
+  if (cleanFallback && !isSyntheticOrGenericName(cleanFallback)) {
+    const hasLetters = /[a-zA-Z\u0900-\u097F]/.test(cleanFallback);
+    if (hasLetters && !cleanFallback.includes('@')) {
+      return cleanFallback;
+    }
   }
 
-  const phone = formatPhoneNumber(candidate);
+  // 3. If fallbackId or candidate is a phone JID or phone number, format it
+  const phone = formatPhoneNumber(cleanFallback || cleanName);
   if (phone) {
     return phone;
   }
 
-  return cleanName || fallbackId?.split('@')[0] || 'WhatsApp Contact';
+  // 4. If fallbackId is an @lid privacy account
+  const isLid = cleanFallback.endsWith('@lid') || cleanName.endsWith('@lid');
+  if (isLid) {
+    const digits = (cleanFallback || cleanName).replace(/\D/g, '');
+    if (digits.length >= 4) {
+      return `WhatsApp User (${digits.slice(-4)})`;
+    }
+  }
+
+  // 5. If cleanFallback is not synthetic and not empty, use its user part
+  if (cleanFallback && !isSyntheticOrGenericName(cleanFallback)) {
+    return cleanFallback.split('@')[0];
+  }
+
+  return 'WhatsApp Contact';
 }
 
 export interface ContactIdentifier {
