@@ -150,7 +150,7 @@ export async function updateTenantProfile(update: {
   return tenantRowToProfile(data);
 }
 
-export async function getConversations(options?: { limit?: number; offset?: number }): Promise<Conversation[]> {
+export async function getConversations(options?: { limit?: number; offset?: number; contactId?: string }): Promise<Conversation[]> {
   try {
     const supabase = getSupabaseAdmin();
     const { tenantId } = await ensureDefaultTenantAndChannel();
@@ -189,6 +189,9 @@ export async function getConversations(options?: { limit?: number; offset?: numb
       .eq('tenant_id', tenantId)
       .order('last_message_at', { ascending: false, nullsFirst: false });
 
+    if (options?.contactId) {
+      query = query.eq('contact_id', options.contactId);
+    }
     if (options?.limit) {
       query = query.limit(options.limit);
     }

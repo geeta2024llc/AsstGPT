@@ -130,7 +130,7 @@ export default function InboxLayout() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState<
-    'open' | 'starred' | 'handoff' | 'my_chats' | 'unassigned' | 'unread' | 'bot_active' | 'human_takeover' | 'resolved' | 'all'
+    'open' | 'starred' | 'handoff' | 'my_chats' | 'unassigned' | 'unread' | 'bot_active' | 'human_takeover' | 'resolved' | 'churned' | 'all'
   >('open');
   const [isCopiedPhone, setIsCopiedPhone] = useState(false);
   const [isBriefingExpanded, setIsBriefingExpanded] = useState(true);
@@ -175,6 +175,10 @@ export default function InboxLayout() {
   );
   const resolvedConvosCount = useMemo(
     () => conversations.filter((c) => c.status === 'resolved').length,
+    [conversations]
+  );
+  const churnedConvosCount = useMemo(
+    () => conversations.filter((c) => c.stage === 'churned').length,
     [conversations]
   );
 
@@ -379,6 +383,8 @@ export default function InboxLayout() {
         matchesFilter = isHandoffConversation(c);
       } else if (filterMode === 'resolved') {
         matchesFilter = isResolved;
+      } else if (filterMode === 'churned') {
+        matchesFilter = c.stage === 'churned';
       } else if (filterMode === 'all') {
         matchesFilter = true;
       }
@@ -908,6 +914,7 @@ export default function InboxLayout() {
                   <SelectItem value="unassigned" className="text-xs">📥 Unassigned Queue</SelectItem>
                   <SelectItem value="unread" className="text-xs">🔴 Unread</SelectItem>
                   <SelectItem value="resolved" className="text-xs">✅ Resolved ({resolvedConvosCount})</SelectItem>
+                  <SelectItem value="churned" className="text-xs font-semibold text-rose-500">⚠️ Churned ({churnedConvosCount})</SelectItem>
                   <SelectItem value="all" className="text-xs">All Chats</SelectItem>
                 </SelectContent>
               </Select>
@@ -924,7 +931,7 @@ export default function InboxLayout() {
             />
           </div>
 
-          {/* Quick Filter Section: All, Starred, Handoff, Auto AI, Resolved */}
+          {/* Quick Filter Section: All, Starred, Handoff, Auto AI, Resolved, Churned */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 pt-0.5 no-scrollbar">
             <button
               type="button"
@@ -1008,6 +1015,27 @@ export default function InboxLayout() {
             >
               <span>✓ Resolved</span>
               <span className="text-[10px] opacity-80">({resolvedConvosCount})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterMode('churned')}
+              className={cn(
+                'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 border',
+                filterMode === 'churned'
+                  ? 'bg-rose-500 text-white font-bold border-rose-400 shadow-xs'
+                  : churnedConvosCount > 0
+                  ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30 hover:bg-rose-500/20'
+                  : 'bg-muted/50 text-muted-foreground border-transparent hover:text-foreground hover:bg-muted'
+              )}
+            >
+              <span>⚠️ Churned</span>
+              <span className={cn(
+                'text-[10px] px-1.5 py-0.2 rounded-full font-bold',
+                churnedConvosCount > 0 && filterMode !== 'churned' ? 'bg-rose-500 text-white' : 'opacity-80'
+              )}>
+                {churnedConvosCount}
+              </span>
             </button>
           </div>
         </div>
