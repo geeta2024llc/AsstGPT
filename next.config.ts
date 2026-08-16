@@ -16,6 +16,18 @@ console.log(`[next.config] NEXT_PUBLIC_API_BASE_URL present at build: ${!!proces
 const nextConfig: NextConfig = {
   output: isVercelBuild ? undefined : 'standalone',
   compress: true,
+  serverExternalPackages: [
+    '@whiskeysockets/baileys',
+    'pino',
+    'pdfjs-dist',
+    'mammoth',
+    'jimp',
+    'ws',
+    'bufferutil',
+    'utf-8-validate',
+    '@hapi/boom',
+    'pg',
+  ],
   experimental: {
     optimizePackageImports: [
       'lucide-react',
