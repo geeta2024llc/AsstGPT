@@ -941,111 +941,118 @@ export default function InboxLayout() {
             )}
           </div>
 
-          {/* Quick Filter Section: All, Starred, Handoff, Auto AI, Resolved, Churned */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 pt-0.5 no-scrollbar">
+          {/* Quick Filter Section: Responsive 3x2 Grid for Desktop & Mobile */}
+          <div className="grid grid-cols-3 gap-1.5 pt-1">
             <button
               type="button"
               onClick={() => setFilterMode('open')}
               className={cn(
-                'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 border',
+                'text-[11px] px-2 py-1.5 rounded-lg font-medium transition-all cursor-pointer flex items-center justify-center gap-1 border truncate shadow-2xs',
                 filterMode === 'open'
                   ? 'bg-primary text-primary-foreground font-bold border-primary shadow-xs'
                   : 'bg-muted/50 text-muted-foreground border-transparent hover:text-foreground hover:bg-muted'
               )}
+              title={`All Active Chats (${openConvosCount})`}
             >
-              <span>All</span>
-              <span className="text-[10px] opacity-80">({openConvosCount})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFilterMode('starred')}
-              className={cn(
-                'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 border',
-                filterMode === 'starred'
-                  ? 'bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-xs'
-                  : starredConvosCount > 0
-                  ? 'bg-amber-500/10 text-amber-500 border-amber-500/30 hover:bg-amber-500/20'
-                  : 'bg-muted/50 text-muted-foreground border-transparent hover:text-foreground hover:bg-muted'
-              )}
-            >
-              <span>⭐ Starred</span>
-              <span className={cn(
-                'text-[10px] px-1.5 py-0.2 rounded-full font-bold',
-                starredConvosCount > 0 && filterMode !== 'starred' ? 'bg-amber-500 text-slate-950' : 'opacity-80'
-              )}>
-                {starredConvosCount}
-              </span>
+              <span className="truncate">All</span>
+              <span className="text-[10px] opacity-85 font-semibold">({openConvosCount})</span>
             </button>
 
             <button
               type="button"
               onClick={() => setFilterMode('handoff')}
               className={cn(
-                'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 border',
+                'text-[11px] px-2 py-1.5 rounded-lg font-medium transition-all cursor-pointer flex items-center justify-center gap-1 border truncate shadow-2xs',
                 filterMode === 'handoff'
                   ? 'bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-xs'
                   : handoffConvosCount > 0
-                  ? 'bg-amber-500/10 text-amber-500 border-amber-500/30 hover:bg-amber-500/20'
+                  ? 'bg-amber-500/15 text-amber-500 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/25 font-bold animate-pulse'
                   : 'bg-muted/50 text-muted-foreground border-transparent hover:text-foreground hover:bg-muted'
               )}
+              title={`Human Takeover & Handoffs (${handoffConvosCount})`}
             >
-              <span>🚨 Handoff</span>
-              <span className={cn(
-                'text-[10px] px-1.5 py-0.2 rounded-full font-bold',
-                handoffConvosCount > 0 && filterMode !== 'handoff' ? 'bg-amber-500 text-slate-950' : 'opacity-80'
-              )}>
-                {handoffConvosCount}
-              </span>
+              <span className="truncate">🚨 Handoff</span>
+              {handoffConvosCount > 0 && (
+                <span className={cn(
+                  'text-[10px] px-1.5 py-0.2 rounded-full font-bold',
+                  filterMode === 'handoff' ? 'bg-slate-950 text-amber-400' : 'bg-amber-500 text-slate-950'
+                )}>
+                  {handoffConvosCount}
+                </span>
+              )}
             </button>
 
             <button
               type="button"
               onClick={() => setFilterMode('bot_active')}
               className={cn(
-                'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 border',
+                'text-[11px] px-2 py-1.5 rounded-lg font-medium transition-all cursor-pointer flex items-center justify-center gap-1 border truncate shadow-2xs',
                 filterMode === 'bot_active'
                   ? 'bg-emerald-600 text-white font-bold border-emerald-500 shadow-xs'
                   : 'bg-muted/50 text-muted-foreground border-transparent hover:text-foreground hover:bg-muted'
               )}
+              title={`Auto AI Active Chats (${botActiveConvosCount})`}
             >
-              <span>🤖 Auto AI</span>
-              <span className="text-[10px] opacity-80">({botActiveConvosCount})</span>
+              <span className="truncate">🤖 AI</span>
+              <span className="text-[10px] opacity-85">({botActiveConvosCount})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterMode('starred')}
+              className={cn(
+                'text-[11px] px-2 py-1.5 rounded-lg font-medium transition-all cursor-pointer flex items-center justify-center gap-1 border truncate shadow-2xs',
+                filterMode === 'starred'
+                  ? 'bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-xs'
+                  : starredConvosCount > 0
+                  ? 'bg-amber-500/10 text-amber-500 border-amber-500/30 hover:bg-amber-500/20'
+                  : 'bg-muted/50 text-muted-foreground border-transparent hover:text-foreground hover:bg-muted'
+              )}
+              title={`Starred Favorites (${starredConvosCount})`}
+            >
+              <span className="truncate">⭐ Starred</span>
+              {starredConvosCount > 0 && (
+                <span className="text-[10px] opacity-85 font-semibold">({starredConvosCount})</span>
+              )}
             </button>
 
             <button
               type="button"
               onClick={() => setFilterMode('resolved')}
               className={cn(
-                'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 border',
+                'text-[11px] px-2 py-1.5 rounded-lg font-medium transition-all cursor-pointer flex items-center justify-center gap-1 border truncate shadow-2xs',
                 filterMode === 'resolved'
                   ? 'bg-slate-700 text-white font-bold border-slate-600 shadow-xs'
                   : 'bg-muted/50 text-muted-foreground border-transparent hover:text-foreground hover:bg-muted'
               )}
+              title={`Resolved Conversations (${resolvedConvosCount})`}
             >
-              <span>✓ Resolved</span>
-              <span className="text-[10px] opacity-80">({resolvedConvosCount})</span>
+              <span className="truncate">✓ Resolved</span>
+              <span className="text-[10px] opacity-85">({resolvedConvosCount})</span>
             </button>
 
             <button
               type="button"
               onClick={() => setFilterMode('churned')}
               className={cn(
-                'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 border',
+                'text-[11px] px-2 py-1.5 rounded-lg font-medium transition-all cursor-pointer flex items-center justify-center gap-1 border truncate shadow-2xs',
                 filterMode === 'churned'
                   ? 'bg-rose-500 text-white font-bold border-rose-400 shadow-xs'
                   : churnedConvosCount > 0
-                  ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30 hover:bg-rose-500/20'
+                  ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30 hover:bg-rose-500/25'
                   : 'bg-muted/50 text-muted-foreground border-transparent hover:text-foreground hover:bg-muted'
               )}
+              title={`Churned Leads & Customers (${churnedConvosCount})`}
             >
-              <span>⚠️ Churned</span>
-              <span className={cn(
-                'text-[10px] px-1.5 py-0.2 rounded-full font-bold',
-                churnedConvosCount > 0 && filterMode !== 'churned' ? 'bg-rose-500 text-white' : 'opacity-80'
-              )}>
-                {churnedConvosCount}
-              </span>
+              <span className="truncate">⚠️ Churned</span>
+              {churnedConvosCount > 0 && (
+                <span className={cn(
+                  'text-[10px] px-1.5 py-0.2 rounded-full font-bold',
+                  filterMode === 'churned' ? 'bg-white text-rose-600' : 'bg-rose-500 text-white'
+                )}>
+                  {churnedConvosCount}
+                </span>
+              )}
             </button>
           </div>
         </div>
