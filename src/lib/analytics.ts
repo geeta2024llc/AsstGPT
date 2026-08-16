@@ -3,6 +3,8 @@ if (typeof window !== 'undefined') {
 }
 
 import { getSupabaseAdmin } from './supabase';
+import { getRequestContext } from './request-context';
+import { ensureDefaultTenantAndChannel } from './db';
 import type { 
   AnalyticsData, 
   TimeSeriesDataPoint, 
@@ -45,9 +47,17 @@ const CATEGORY_COLORS: Record<string, string> = {
   'Other': '#6b7280',
 };
 
-export async function getAnalyticsData(range: 'today' | '7d' | '30d' = '7d'): Promise<AnalyticsData> {
+export async function getAnalyticsData(
+  range: 'today' | '7d' | '30d' = '7d',
+  explicitTenantId?: string
+): Promise<AnalyticsData> {
   const supabase = getSupabaseAdmin();
-  const tenantId = getDefaultTenantId();
+  const ctx = getRequestContext();
+  let tenantId = explicitTenantId || ctx?.tenantId;
+  if (!tenantId) {
+    const defaultData = await ensureDefaultTenantAndChannel();
+    tenantId = defaultData.tenantId;
+  }
 
   const now = new Date();
   let days = 7;

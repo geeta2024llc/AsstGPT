@@ -56,15 +56,8 @@ export async function GET() {
     checks: {
       database: dbStatus,
       whatsApp: waState.status,
-      whatsappStorage: {
-        writable: storageHealth.writable,
-        exists: storageHealth.exists,
-        hasCredentials: storageHealth.hasCredentials,
-        error: storageHealth.error,
-      },
-      aiProvider: 'gemini',
+      storageHealthy: storageHealth.writable,
       aiConfigured: hasGeminiKey,
-      whatsappAccount: waState.account ? waState.account.name : null,
     },
   }, { status: overallStatus === 'error' ? 503 : 200 });
 }

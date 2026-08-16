@@ -6,8 +6,9 @@ import { claimOrRenewLeadership, isCurrentReplicaLeader } from '../../src/lib/wh
 import { addMessage, getMessages, createConversationNote, getConversationNotes } from '../../src/lib/db';
 
 export async function runAdversarialSecurityAudit(): Promise<boolean> {
-  // Ensure strict production mode for SSRF checks
+  // Ensure strict production mode for auth and SSRF checks
   delete process.env.ALLOW_LOCAL_WEBHOOKS;
+  process.env.AUTH_REQUIRED = 'true';
 
   console.log('\n============================================================');
   console.log('  ADVERSARIAL MULTI-TENANT PENETRATION & SECURITY AUDIT');
