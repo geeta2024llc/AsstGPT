@@ -1,8 +1,8 @@
 
 'use client';
 
-import QRLogin from '@/components/qr-login';
+import SlidingAuthPage from '@/components/auth/sliding-auth-page';
 
-export default function Home() {
-  return <QRLogin />;
+export default function HomePage() {
+  return <SlidingAuthPage initialMode="login" />;
 }

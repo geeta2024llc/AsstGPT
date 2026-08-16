@@ -24,7 +24,7 @@ function randomSuffix(): string {
  * resolution), and an owning tenant_members row.
  */
 export async function POST(req: NextRequest) {
-  let body: { fullName?: string; companyName?: string; email?: string; password?: string };
+  let body: { fullName?: string; companyName?: string; email?: string; password?: string; phone?: string; phoneNumber?: string; countryCode?: string };
   try {
     body = await req.json();
   } catch {
@@ -35,13 +35,16 @@ export async function POST(req: NextRequest) {
   const companyName = body.companyName?.trim();
   const email = body.email?.trim().toLowerCase();
   const password = body.password;
+  const rawPhone = (body.phone || body.phoneNumber)?.trim();
+  const countryCode = body.countryCode?.trim() || '+977';
 
-  if (!fullName || !companyName || !email || !password) {
+  if (!fullName || !companyName || !email || !password || !rawPhone) {
     return NextResponse.json(
-      { error: 'fullName, companyName, email, and password are all required' },
+      { error: 'Full name, company name, work email, contact number, and password are all required.' },
       { status: 400 }
     );
   }
+  const fullPhoneNumber = rawPhone.startsWith('+') ? rawPhone : `${countryCode} ${rawPhone}`;
   if (password.length < 8) {
     return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 });
   }
@@ -85,7 +88,13 @@ export async function POST(req: NextRequest) {
     email,
     password,
     email_confirm: true,
-    user_metadata: { full_name: fullName, company_name: companyName },
+    user_metadata: {
+      full_name: fullName,
+      company_name: companyName,
+      phone: fullPhoneNumber,
+      country_code: countryCode,
+      contact_number: rawPhone,
+    },
     app_metadata: { tenant_id: tenant.id, role: 'admin' },
   });
 
