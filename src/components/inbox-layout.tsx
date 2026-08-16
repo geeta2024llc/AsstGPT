@@ -53,6 +53,8 @@ import {
   Plus,
   PhoneCall,
   UserPlus,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -131,6 +133,7 @@ export default function InboxLayout() {
     'open' | 'starred' | 'handoff' | 'my_chats' | 'unassigned' | 'unread' | 'bot_active' | 'human_takeover' | 'resolved' | 'all'
   >('open');
   const [isCopiedPhone, setIsCopiedPhone] = useState(false);
+  const [isBriefingExpanded, setIsBriefingExpanded] = useState(true);
 
   // New Chat Dialog State
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
@@ -846,7 +849,7 @@ export default function InboxLayout() {
   const totalUnreadConvos = conversations.reduce((acc, c) => acc + (c.unreadCount > 0 ? 1 : 0), 0);
 
   return (
-    <div className="relative flex h-[calc(100vh-theme(spacing.36))] rounded-xl border bg-card shadow-sm overflow-hidden">
+    <div className="relative flex h-full w-full rounded-xl border bg-card shadow-sm overflow-hidden">
       {/* Sidebar: Conversation List */}
       <aside
         className={cn(
@@ -854,34 +857,26 @@ export default function InboxLayout() {
           selectedConversationId && '-translate-x-full'
         )}
       >
-        <div className="border-b p-3 space-y-2 bg-muted/20">
+        <div className="border-b p-3 space-y-2.5 bg-muted/20">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="font-headline text-lg font-semibold flex items-center gap-1.5 flex-wrap">
-              <span>Inbox</span>
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 whitespace-nowrap inline-flex items-center shrink-0 font-medium" title={`${filteredConversations.length} conversations in view`}>
-                {filteredConversations.length}
-              </Badge>
-              {handoffConvosCount > 0 && (
-                <Badge variant="outline" className="text-[10px] px-2 py-0.5 whitespace-nowrap inline-flex items-center gap-1 bg-amber-500/15 text-amber-500 border-amber-500/30 font-bold animate-pulse shrink-0" title={`${handoffConvosCount} conversations in handoff`}>
-                  <span>🚨 {handoffConvosCount} handoff</span>
+            <div className="flex items-center gap-2 min-w-0">
+              <h2 className="font-headline text-base font-bold flex items-center gap-2 tracking-tight">
+                <span>Inbox</span>
+                <Badge variant="secondary" className="text-xs px-2 py-0.5 font-semibold">
+                  {filteredConversations.length}
                 </Badge>
-              )}
-              {totalUnreadConvos > 0 && (
-                <Badge variant="default" className="text-[10px] px-2 py-0.5 whitespace-nowrap inline-flex items-center gap-1 bg-emerald-600 text-white font-bold shrink-0" title={`${totalUnreadConvos} unread conversations`}>
-                  <span>{totalUnreadConvos} unread</span>
-                </Badge>
-              )}
-              <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 ml-1 font-normal shrink-0">
+              </h2>
+              <span className="flex items-center gap-1 text-[11px] text-emerald-500 font-medium bg-emerald-500/10 px-1.5 py-0.5 rounded-full border border-emerald-500/20">
                 <Radio className="h-2.5 w-2.5 animate-pulse" />
                 <span>Live</span>
               </span>
-            </h2>
+            </div>
 
             <div className="flex items-center gap-1">
               <Button
                 variant="default"
                 size="sm"
-                className="h-7 text-xs px-2.5 gap-1 font-semibold bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer shadow-xs"
+                className="h-7 text-xs px-2.5 gap-1.5 font-semibold bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer shadow-xs rounded-lg"
                 onClick={() => setIsNewChatOpen(true)}
                 title="Start a new conversation and hand off to AI or human"
               >
@@ -892,7 +887,7 @@ export default function InboxLayout() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 text-muted-foreground cursor-pointer"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground cursor-pointer rounded-lg"
                 onClick={() => setSoundEnabled(p => !p)}
                 title={soundEnabled ? 'Notification chime on' : 'Notification chime muted'}
               >
@@ -900,8 +895,8 @@ export default function InboxLayout() {
               </Button>
 
               <Select value={filterMode} onValueChange={(val: any) => setFilterMode(val)}>
-                <SelectTrigger className="h-7 text-xs px-2 w-[130px] bg-background cursor-pointer">
-                  <Filter className="h-3 w-3 mr-1 text-muted-foreground" />
+                <SelectTrigger className="h-7 text-xs px-2.5 w-[125px] bg-background cursor-pointer rounded-lg border-border/80">
+                  <Filter className="h-3 w-3 mr-1 text-muted-foreground shrink-0" />
                   <SelectValue placeholder="Filter" />
                 </SelectTrigger>
                 <SelectContent align="end">
@@ -919,23 +914,26 @@ export default function InboxLayout() {
             </div>
           </div>
 
-          <Input
-            placeholder="Search contacts or numbers..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-8 text-xs bg-background"
-          />
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Search contacts or numbers..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-8 text-xs pl-8 bg-background rounded-lg border-border/80"
+            />
+          </div>
 
           {/* Quick Filter Section: All, Starred, Handoff, Auto AI, Resolved */}
-          <div className="flex items-center gap-1 overflow-x-auto pb-0.5 pt-0.5 no-scrollbar">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 pt-0.5 no-scrollbar">
             <button
               type="button"
               onClick={() => setFilterMode('open')}
               className={cn(
-                'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1',
+                'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 border',
                 filterMode === 'open'
-                  ? 'bg-primary text-primary-foreground font-bold shadow-xs'
-                  : 'bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted'
+                  ? 'bg-primary text-primary-foreground font-bold border-primary shadow-xs'
+                  : 'bg-muted/50 text-muted-foreground border-transparent hover:text-foreground hover:bg-muted'
               )}
             >
               <span>All</span>
@@ -948,15 +946,15 @@ export default function InboxLayout() {
               className={cn(
                 'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 border',
                 filterMode === 'starred'
-                  ? 'bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-md shadow-amber-500/20'
+                  ? 'bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-xs'
                   : starredConvosCount > 0
-                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
-                  : 'bg-muted/60 text-muted-foreground border-transparent hover:text-foreground hover:bg-muted'
+                  ? 'bg-amber-500/10 text-amber-500 border-amber-500/30 hover:bg-amber-500/20'
+                  : 'bg-muted/50 text-muted-foreground border-transparent hover:text-foreground hover:bg-muted'
               )}
             >
               <span>⭐ Starred</span>
               <span className={cn(
-                'text-[10px] px-1 py-0 rounded-full font-bold',
+                'text-[10px] px-1.5 py-0.2 rounded-full font-bold',
                 starredConvosCount > 0 && filterMode !== 'starred' ? 'bg-amber-500 text-slate-950' : 'opacity-80'
               )}>
                 {starredConvosCount}
@@ -969,15 +967,15 @@ export default function InboxLayout() {
               className={cn(
                 'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 border',
                 filterMode === 'handoff'
-                  ? 'bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-md shadow-amber-500/20'
+                  ? 'bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-xs'
                   : handoffConvosCount > 0
-                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
-                  : 'bg-muted/60 text-muted-foreground border-transparent hover:text-foreground hover:bg-muted'
+                  ? 'bg-amber-500/10 text-amber-500 border-amber-500/30 hover:bg-amber-500/20'
+                  : 'bg-muted/50 text-muted-foreground border-transparent hover:text-foreground hover:bg-muted'
               )}
             >
               <span>🚨 Handoff</span>
               <span className={cn(
-                'text-[10px] px-1 py-0 rounded-full font-bold',
+                'text-[10px] px-1.5 py-0.2 rounded-full font-bold',
                 handoffConvosCount > 0 && filterMode !== 'handoff' ? 'bg-amber-500 text-slate-950' : 'opacity-80'
               )}>
                 {handoffConvosCount}
@@ -988,10 +986,10 @@ export default function InboxLayout() {
               type="button"
               onClick={() => setFilterMode('bot_active')}
               className={cn(
-                'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1',
+                'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 border',
                 filterMode === 'bot_active'
-                  ? 'bg-emerald-600 text-white font-bold shadow-xs'
-                  : 'bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted'
+                  ? 'bg-emerald-600 text-white font-bold border-emerald-500 shadow-xs'
+                  : 'bg-muted/50 text-muted-foreground border-transparent hover:text-foreground hover:bg-muted'
               )}
             >
               <span>🤖 Auto AI</span>
@@ -1002,10 +1000,10 @@ export default function InboxLayout() {
               type="button"
               onClick={() => setFilterMode('resolved')}
               className={cn(
-                'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1',
+                'text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 border',
                 filterMode === 'resolved'
-                  ? 'bg-slate-700 text-white font-bold shadow-xs'
-                  : 'bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted'
+                  ? 'bg-slate-700 text-white font-bold border-slate-600 shadow-xs'
+                  : 'bg-muted/50 text-muted-foreground border-transparent hover:text-foreground hover:bg-muted'
               )}
             >
               <span>✓ Resolved</span>
@@ -1181,16 +1179,28 @@ export default function InboxLayout() {
                     const ident = getContactIdentifier(selectedConversation.name, selectedConversation.id, selectedConversation.company);
                     return (
                       <>
-                        <Avatar className="h-9 w-9 shrink-0 border bg-muted/40">
-                          <AvatarImage src={selectedConversation.avatar} alt={ident.displayName} />
-                          <AvatarFallback className="font-semibold text-xs text-primary bg-primary/10">
-                            {ident.avatarInitials}
-                          </AvatarFallback>
-                        </Avatar>
+                        <div className="relative shrink-0">
+                          <Avatar className="h-9 w-9 border bg-muted/40 shrink-0">
+                            <AvatarImage src={selectedConversation.avatar} alt={ident.displayName} />
+                            <AvatarFallback className="font-semibold text-xs text-primary bg-primary/10">
+                              {ident.avatarInitials}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span
+                            className={cn(
+                              'absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full ring-2 ring-background text-[7px]',
+                              isSelectedConvoResolved
+                                ? 'bg-slate-500 text-white'
+                                : isSelectedConvoPaused
+                                ? 'bg-amber-500 text-white'
+                                : 'bg-emerald-500 text-white'
+                            )}
+                          />
+                        </div>
 
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <h3 className="font-headline font-semibold text-sm truncate">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                            <h3 className="font-headline font-bold text-sm truncate text-foreground">
                               {ident.displayName}
                             </h3>
 
@@ -1198,11 +1208,11 @@ export default function InboxLayout() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6 text-muted-foreground hover:text-amber-400 cursor-pointer"
+                              className="h-5 w-5 text-muted-foreground hover:text-amber-400 cursor-pointer"
                               onClick={(e) => handleToggleStar(selectedConversation.id, e)}
                               title={selectedConversation.isStarred ? 'Starred favorite (Click to unstar)' : 'Star conversation as favorite'}
                             >
-                              <Star className={cn('h-3.5 w-3.5', selectedConversation.isStarred ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/40 hover:text-amber-400')} />
+                              <Star className={cn('h-3.5 w-3.5', selectedConversation.isStarred ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/30 hover:text-amber-400')} />
                             </Button>
 
                             {/* Interactive Lifecycle Stage Selector Dropdown */}
@@ -1211,7 +1221,7 @@ export default function InboxLayout() {
                               onValueChange={(val: any) => handleUpdateStage(selectedConversation.id, val)}
                             >
                               <SelectTrigger className={cn(
-                                'h-6 text-[10px] px-2 font-semibold border rounded-md shadow-none cursor-pointer',
+                                'h-5 text-[10px] px-2 font-semibold border rounded-md shadow-none cursor-pointer',
                                 selectedConversation.stage === 'lead' && 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30',
                                 selectedConversation.stage === 'prospect' && 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30',
                                 selectedConversation.stage === 'customer' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
@@ -1255,11 +1265,11 @@ export default function InboxLayout() {
                               </Badge>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground truncate">
-                            <span className="font-mono flex items-center gap-1">
-                              <span>WhatsApp</span>
-                              <span>•</span>
-                              <span className="text-foreground font-medium">{ident.phoneNumber}</span>
+
+                          <div className="flex items-center gap-2 text-[11px] text-muted-foreground truncate">
+                            <span className="font-mono flex items-center gap-1 text-muted-foreground">
+                              <Phone className="w-3 h-3 text-emerald-500 shrink-0" />
+                              <span>{ident.phoneNumber}</span>
                             </span>
                             {selectedConversation.company && (
                               <span>• {selectedConversation.company}</span>
@@ -1267,16 +1277,16 @@ export default function InboxLayout() {
                             <button
                               type="button"
                               onClick={() => handleCopyPhone(ident.phoneNumber)}
-                              className="text-[10px] text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-border/50 bg-muted/40 cursor-pointer"
+                              className="text-[10px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 px-1.5 py-0.5 rounded border border-border/50 bg-muted/40 hover:bg-muted cursor-pointer ml-1"
                               title="Copy phone number"
                             >
                               {isCopiedPhone ? (
                                 <>
-                                  <Check className="w-2.5 h-2.5 text-emerald-400" /> Copied
+                                  <Check className="w-2.5 h-2.5 text-emerald-400" /> <span>Copied</span>
                                 </>
                               ) : (
                                 <>
-                                  <Copy className="w-2.5 h-2.5" /> Copy
+                                  <Copy className="w-2.5 h-2.5" /> <span>Copy</span>
                                 </>
                               )}
                             </button>
@@ -1293,7 +1303,7 @@ export default function InboxLayout() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8 text-xs gap-1.5 px-2.5"
+                    className="h-8 text-xs gap-1.5 px-2.5 rounded-lg cursor-pointer"
                     onClick={() => setIsProfileDrawerOpen(true)}
                     title="View & Edit Contact CRM Profile"
                   >
@@ -1306,7 +1316,7 @@ export default function InboxLayout() {
                     variant={isSelectedConvoResolved ? 'default' : 'outline'}
                     size="sm"
                     disabled={isResolving}
-                    className="h-8 text-xs gap-1.5 px-2.5"
+                    className="h-8 text-xs gap-1.5 px-2.5 rounded-lg cursor-pointer"
                     onClick={() => handleToggleResolve(selectedConversation.id, !isSelectedConvoResolved)}
                   >
                     {isResolving ? (
@@ -1325,7 +1335,7 @@ export default function InboxLayout() {
                     value={selectedConversation.assignedUserId || 'unassigned'}
                     onValueChange={(val) => handleAssignTeamMember(selectedConversation.id, val)}
                   >
-                    <SelectTrigger className="h-8 text-xs w-[130px] sm:w-[155px] bg-background gap-1.5 px-2.5 cursor-pointer">
+                    <SelectTrigger className="h-8 text-xs w-[130px] sm:w-[150px] bg-background gap-1.5 px-2.5 cursor-pointer rounded-lg">
                       <UserCheck className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                       <SelectValue placeholder="Assign Agent">
                         <span className="truncate text-xs">
@@ -1362,8 +1372,8 @@ export default function InboxLayout() {
                       className={cn(
                         'text-xs font-medium cursor-pointer select-none hidden lg:inline-block',
                         isSelectedConvoPaused
-                          ? 'text-amber-600 dark:text-amber-400 font-semibold'
-                          : 'text-emerald-600 dark:text-emerald-400 font-semibold'
+                          ? 'text-amber-500 font-bold'
+                          : 'text-emerald-500 font-bold'
                       )}
                     >
                       {isSelectedConvoPaused ? 'Takeover' : 'Auto AI'}
@@ -1372,60 +1382,76 @@ export default function InboxLayout() {
                 </div>
               </div>
 
-              {/* Live Escalation Banner with AI Catch-Up Briefing */}
+              {/* Live Escalation Banner with Collapsible AI Catch-Up Briefing */}
               {isSelectedConvoPaused && !isSelectedConvoResolved && (
-                <div className="bg-amber-500/10 border-t border-amber-500/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 truncate">
-                      <ShieldAlert className="h-4 w-4 text-amber-500 shrink-0" />
-                      <span className="font-semibold shrink-0">Live Takeover Active:</span>
-                      <span className="truncate opacity-90">
+                <div className="bg-amber-500/10 border-t border-b border-amber-500/20 text-xs text-amber-900 dark:text-amber-200 transition-all">
+                  <div className="px-3.5 py-2 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <ShieldAlert className="h-4 w-4 text-amber-500 shrink-0 animate-pulse" />
+                      <span className="font-bold text-amber-600 dark:text-amber-400 shrink-0">Live Takeover Active:</span>
+                      <span className="truncate opacity-90 text-[11px] text-foreground">
                         {selectedConversation.handoffReason || 'AI auto-reply is paused for this customer.'}
                       </span>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 text-[11px] px-2 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 shrink-0 ml-2"
-                      onClick={() => handleToggleTakeover(selectedConversation.id, 'ai')}
-                    >
-                      Resume Bot
-                    </Button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {(selectedConversation.handoffMetadata?.takeoverBriefing || selectedConversation.takeoverBriefing) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-[11px] px-2 gap-1 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 cursor-pointer font-medium rounded-md"
+                          onClick={() => setIsBriefingExpanded(p => !p)}
+                        >
+                          <Sparkles className="h-3 w-3 text-amber-500" />
+                          <span>{isBriefingExpanded ? 'Hide Brief' : 'AI Brief'}</span>
+                          <ChevronDown className={cn('h-3 w-3 transition-transform duration-200', isBriefingExpanded && 'rotate-180')} />
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 text-[11px] px-2.5 bg-amber-500 text-slate-950 font-bold border-amber-400 hover:bg-amber-400 cursor-pointer shadow-xs rounded-md"
+                        onClick={() => handleToggleTakeover(selectedConversation.id, 'ai')}
+                      >
+                        Resume Bot
+                      </Button>
+                    </div>
                   </div>
 
-                  {/* AI Catch-Up Briefing Card */}
-                  {(selectedConversation.handoffMetadata?.takeoverBriefing || selectedConversation.takeoverBriefing) && (
-                    <div className="bg-background/80 border border-amber-500/30 rounded-md p-2.5 space-y-1 text-[11px] text-foreground shadow-xs">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 font-bold text-amber-700 dark:text-amber-400">
-                          <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-                          <span>AI Hand-Off Catch-Up Briefing</span>
+                  {/* AI Catch-Up Briefing Card (Collapsible) */}
+                  {isBriefingExpanded && (selectedConversation.handoffMetadata?.takeoverBriefing || selectedConversation.takeoverBriefing) && (
+                    <div className="px-3.5 pb-2.5 pt-0">
+                      <div className="bg-background/90 border border-amber-500/30 rounded-lg p-2.5 space-y-1.5 text-[11px] text-foreground shadow-xs">
+                        <div className="flex items-center justify-between pb-1 border-b border-border/50">
+                          <div className="flex items-center gap-1.5 font-bold text-amber-600 dark:text-amber-400">
+                            <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                            <span>AI Hand-Off Catch-Up Briefing</span>
+                          </div>
+                          {(selectedConversation.handoffMetadata?.takeoverBriefing?.customerFrustration || selectedConversation.takeoverBriefing?.customerFrustration) && (
+                            <Badge
+                              variant="outline"
+                              className={cn('text-[9px] px-1.5 py-0 uppercase font-bold', {
+                                'bg-rose-500/10 text-rose-600 border-rose-500/30': (selectedConversation.handoffMetadata?.takeoverBriefing?.customerFrustration || selectedConversation.takeoverBriefing?.customerFrustration) === 'high',
+                                'bg-amber-500/10 text-amber-600 border-amber-500/30': (selectedConversation.handoffMetadata?.takeoverBriefing?.customerFrustration || selectedConversation.takeoverBriefing?.customerFrustration) === 'medium',
+                                'bg-emerald-500/10 text-emerald-600 border-emerald-500/30': (selectedConversation.handoffMetadata?.takeoverBriefing?.customerFrustration || selectedConversation.takeoverBriefing?.customerFrustration) === 'low',
+                              })}
+                            >
+                              Frustration: {selectedConversation.handoffMetadata?.takeoverBriefing?.customerFrustration || selectedConversation.takeoverBriefing?.customerFrustration}
+                            </Badge>
+                          )}
                         </div>
-                        {(selectedConversation.handoffMetadata?.takeoverBriefing?.customerFrustration || selectedConversation.takeoverBriefing?.customerFrustration) && (
-                          <Badge
-                            variant="outline"
-                            className={cn('text-[9px] px-1.5 py-0 uppercase font-bold', {
-                              'bg-rose-500/10 text-rose-600 border-rose-500/30': (selectedConversation.handoffMetadata?.takeoverBriefing?.customerFrustration || selectedConversation.takeoverBriefing?.customerFrustration) === 'high',
-                              'bg-amber-500/10 text-amber-600 border-amber-500/30': (selectedConversation.handoffMetadata?.takeoverBriefing?.customerFrustration || selectedConversation.takeoverBriefing?.customerFrustration) === 'medium',
-                              'bg-emerald-500/10 text-emerald-600 border-emerald-500/30': (selectedConversation.handoffMetadata?.takeoverBriefing?.customerFrustration || selectedConversation.takeoverBriefing?.customerFrustration) === 'low',
-                            })}
-                          >
-                            Frustration: {selectedConversation.handoffMetadata?.takeoverBriefing?.customerFrustration || selectedConversation.takeoverBriefing?.customerFrustration}
-                          </Badge>
-                        )}
+                        <p className="text-muted-foreground leading-relaxed">
+                          <strong className="text-foreground">Issue:</strong>{' '}
+                          {selectedConversation.handoffMetadata?.takeoverBriefing?.keyIssue || selectedConversation.takeoverBriefing?.keyIssue}
+                        </p>
+                        <p className="text-muted-foreground leading-relaxed">
+                          <strong className="text-foreground">Bot Attempted:</strong>{' '}
+                          {selectedConversation.handoffMetadata?.takeoverBriefing?.botAttemptsSummary || selectedConversation.takeoverBriefing?.botAttemptsSummary}
+                        </p>
+                        <p className="text-emerald-600 dark:text-emerald-400 font-medium leading-relaxed bg-emerald-500/5 px-2 py-1 rounded border border-emerald-500/15">
+                          <strong>Recommended Next Step:</strong>{' '}
+                          {selectedConversation.handoffMetadata?.takeoverBriefing?.recommendedNextAction || selectedConversation.takeoverBriefing?.recommendedNextAction}
+                        </p>
                       </div>
-                      <p className="text-muted-foreground leading-relaxed">
-                        <strong className="text-foreground">Issue:</strong>{' '}
-                        {selectedConversation.handoffMetadata?.takeoverBriefing?.keyIssue || selectedConversation.takeoverBriefing?.keyIssue}
-                      </p>
-                      <p className="text-muted-foreground leading-relaxed">
-                        <strong className="text-foreground">Bot Attempted:</strong>{' '}
-                        {selectedConversation.handoffMetadata?.takeoverBriefing?.botAttemptsSummary || selectedConversation.takeoverBriefing?.botAttemptsSummary}
-                      </p>
-                      <p className="text-emerald-700 dark:text-emerald-400 font-medium leading-relaxed bg-emerald-500/5 px-1.5 py-0.5 rounded border border-emerald-500/10">
-                        <strong>Recommended Next Step:</strong>{' '}
-                        {selectedConversation.handoffMetadata?.takeoverBriefing?.recommendedNextAction || selectedConversation.takeoverBriefing?.recommendedNextAction}
-                      </p>
                     </div>
                   )}
                 </div>
@@ -1518,6 +1544,14 @@ export default function InboxLayout() {
 
                     const msg = item.data;
                     const isOutbound = msg.fromMe;
+                    const prevItem = idx > 0 ? timelineItems[idx - 1] : null;
+                    const isSameSenderAsPrev = Boolean(
+                      prevItem &&
+                      prevItem.type === 'message' &&
+                      prevItem.data.fromMe === msg.fromMe &&
+                      Math.abs(msg.timestamp - prevItem.timestamp) < 3 * 60 * 1000
+                    );
+
                     const senderDisplayName = formatContactName(
                       msg.senderName && msg.senderName.toLowerCase() !== 'me' && msg.senderName.toLowerCase() !== 'system'
                         ? msg.senderName
@@ -1530,30 +1564,38 @@ export default function InboxLayout() {
                     return (
                       <div
                         key={`msg_${msg.id}_${idx}`}
-                        className={cn('flex items-end gap-2', isOutbound ? 'justify-end' : 'justify-start')}
+                        className={cn(
+                          'flex items-end gap-2',
+                          isOutbound ? 'justify-end' : 'justify-start',
+                          isSameSenderAsPrev ? 'mt-1' : 'mt-3'
+                        )}
                       >
                         {!isOutbound && (
-                          <Avatar className="h-7 w-7 border shrink-0 bg-muted/40 mb-1">
-                            <AvatarImage src={selectedConversation.avatar} alt={senderDisplayName} />
-                            <AvatarFallback className="text-[10px] font-semibold text-primary bg-primary/10">
-                              {getAvatarInitials(msg.senderName || selectedConversation.name, selectedConversation.id)}
-                            </AvatarFallback>
-                          </Avatar>
+                          !isSameSenderAsPrev ? (
+                            <Avatar className="h-7 w-7 border shrink-0 bg-muted/40 mb-1">
+                              <AvatarImage src={selectedConversation.avatar} alt={senderDisplayName} />
+                              <AvatarFallback className="text-[10px] font-semibold text-primary bg-primary/10">
+                                {getAvatarInitials(msg.senderName || selectedConversation.name, selectedConversation.id)}
+                              </AvatarFallback>
+                            </Avatar>
+                          ) : (
+                            <div className="w-7 shrink-0" />
+                          )
                         )}
 
                         <div className="space-y-1 max-w-xs md:max-w-md lg:max-w-lg">
-                          {!isOutbound && (
+                          {!isOutbound && !isSameSenderAsPrev && (
                             <div className="text-[11px] font-medium text-muted-foreground pl-1">
                               {senderDisplayName}
                             </div>
                           )}
                           <div
                             className={cn(
-                              'rounded-2xl px-4 py-2.5 shadow-xs text-sm space-y-1',
+                              'rounded-2xl px-4 py-2 shadow-xs text-sm space-y-1',
                               isFailed
                                 ? 'bg-destructive/10 border border-destructive/30 text-foreground rounded-br-xs'
                                 : isOutbound
-                                ? 'bg-primary text-primary-foreground rounded-br-xs'
+                                ? 'bg-primary text-primary-foreground rounded-br-xs font-normal'
                                 : 'border bg-card text-card-foreground rounded-bl-xs'
                             )}
                           >
@@ -1564,8 +1606,8 @@ export default function InboxLayout() {
                                 isFailed
                                   ? 'text-destructive'
                                   : isOutbound
-                                  ? 'text-primary-foreground opacity-70'
-                                  : 'text-muted-foreground opacity-70'
+                                  ? 'text-primary-foreground opacity-80'
+                                  : 'text-muted-foreground opacity-80'
                               )}
                             >
                               <span>{format(new Date(msg.timestamp), 'p')}</span>
