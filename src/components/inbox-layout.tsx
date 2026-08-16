@@ -1330,8 +1330,8 @@ export default function InboxLayout() {
                       <SelectValue placeholder="Assign Agent" />
                     </SelectTrigger>
                     <SelectContent align="end">
-                      <SelectItem value="unassigned" className="text-xs">
-                        <span className="text-muted-foreground">Unassigned Queue</span>
+                      <SelectItem value="unassigned" className="text-xs font-medium">
+                        Unassigned Queue
                       </SelectItem>
                       {teamMembers.map(member => (
                         <SelectItem key={member.id} value={member.id} className="text-xs">

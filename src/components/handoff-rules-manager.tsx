@@ -653,8 +653,8 @@ export default function HandoffRulesManager() {
                     <SelectValue placeholder="Select team member" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="unassigned">
-                      <span className="text-muted-foreground">Unassigned Queue</span>
+                    <SelectItem value="unassigned" className="font-medium">
+                      Unassigned Queue
                     </SelectItem>
                     {teamMembers.map(m => (
                       <SelectItem key={m.id} value={m.id}>
