@@ -16,17 +16,23 @@ export interface PlatformContext {
 
 /**
  * Retrieves the platform admin record from public.platform_admins.
- * Auto-bootstraps designated super admin emails (e.g. from SUPER_ADMIN_EMAILS env or primary admin accounts).
+ * Auto-bootstraps designated super admin emails from the SUPER_ADMIN_EMAILS
+ * env var only -- never a literal baked into source. A hardcoded identity
+ * in the codebase can never actually be revoked (the very next login would
+ * just re-create it) and is trivially discoverable by anyone who can read
+ * the repo.
  */
 export async function getPlatformAdminRecord(email: string, userId?: string) {
   const normalizedEmail = email.toLowerCase().trim();
   const admin = getSupabaseAdmin();
 
+  // Fetch regardless of revocation status -- revocation is checked once,
+  // centrally, below, so it applies uniformly whether the row came from
+  // this query or from the auto-bootstrap upsert.
   let { data } = await admin
     .from('platform_admins')
     .select('user_id, email, platform_role, revoked_at')
     .eq('email', normalizedEmail)
-    .is('revoked_at', null)
     .maybeSingle();
 
   if (!data) {
@@ -36,12 +42,7 @@ export async function getPlatformAdminRecord(email: string, userId?: string) {
       .map((e) => e.trim())
       .filter(Boolean);
 
-    const isDesignatedSuperAdmin =
-      envSuperAdmins.includes(normalizedEmail) ||
-      normalizedEmail === 'geeta2024llc@gmail.com' ||
-      normalizedEmail === 'gita2024llc@gmail.com';
-
-    if (isDesignatedSuperAdmin) {
+    if (envSuperAdmins.includes(normalizedEmail)) {
       const { data: inserted, error: insertErr } = await admin
         .from('platform_admins')
         .upsert(
@@ -61,6 +62,11 @@ export async function getPlatformAdminRecord(email: string, userId?: string) {
     }
   } else if (userId && !data.user_id) {
     await admin.from('platform_admins').update({ user_id: userId }).eq('email', data.email);
+  }
+
+  // A revoked row must never be treated as valid, on any path above.
+  if (data?.revoked_at) {
+    return null;
   }
 
   return data;

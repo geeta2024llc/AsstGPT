@@ -23,5 +23,5 @@ export const POST = withApiAuth(
       return NextResponse.json({ success: false, message: 'Logout failed.' }, { status: 500 });
     }
   },
-  { allowPublic: true, roles: ['admin', 'operator'] }
+  { roles: ['admin', 'operator'] }
 );

@@ -1077,7 +1077,10 @@ export default function InboxLayout() {
                 >
                   <div className="relative shrink-0 mt-0.5">
                     <Avatar className="h-10 w-10 border bg-muted/40 shrink-0">
-                      <AvatarImage src={convo.avatar} alt={displayName} />
+                      <AvatarImage
+                        src={convo.avatar && !convo.avatar.includes('placehold.co') ? convo.avatar : undefined}
+                        alt={displayName}
+                      />
                       <AvatarFallback className="font-semibold text-xs text-primary bg-primary/10">
                         {avatarInitials}
                       </AvatarFallback>
@@ -1209,7 +1212,10 @@ export default function InboxLayout() {
                       <>
                         <div className="relative shrink-0">
                           <Avatar className="h-9 w-9 border bg-muted/40 shrink-0">
-                            <AvatarImage src={selectedConversation.avatar} alt={ident.displayName} />
+                            <AvatarImage
+                              src={selectedConversation.avatar && !selectedConversation.avatar.includes('placehold.co') ? selectedConversation.avatar : undefined}
+                              alt={ident.displayName}
+                            />
                             <AvatarFallback className="font-semibold text-xs text-primary bg-primary/10">
                               {ident.avatarInitials}
                             </AvatarFallback>
@@ -1295,29 +1301,48 @@ export default function InboxLayout() {
                           </div>
 
                           <div className="flex items-center gap-2 text-[11px] text-muted-foreground truncate">
-                            <span className="font-mono flex items-center gap-1 text-muted-foreground">
-                              <Phone className="w-3 h-3 text-emerald-500 shrink-0" />
-                              <span>{ident.phoneNumber}</span>
-                            </span>
-                            {selectedConversation.company && (
-                              <span>• {selectedConversation.company}</span>
+                            {ident.phoneNumber ? (
+                              <>
+                                <span className="font-mono flex items-center gap-1 text-muted-foreground">
+                                  <Phone className="w-3 h-3 text-emerald-500 shrink-0" />
+                                  <span>{ident.phoneNumber}</span>
+                                </span>
+                                {selectedConversation.company && (
+                                  <span>• {selectedConversation.company}</span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyPhone(ident.phoneNumber)}
+                                  className="text-[10px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 px-1.5 py-0.5 rounded border border-border/50 bg-muted/40 hover:bg-muted cursor-pointer ml-1"
+                                  title="Copy phone number"
+                                >
+                                  {isCopiedPhone ? (
+                                    <>
+                                      <Check className="w-2.5 h-2.5 text-emerald-400" /> <span>Copied</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-2.5 h-2.5" /> <span>Copy</span>
+                                    </>
+                                  )}
+                                </button>
+                              </>
+                            ) : (
+                              <span className="flex items-center gap-1.5 text-muted-foreground">
+                                <span>WhatsApp</span>
+                                {selectedConversation.id.endsWith('@lid') ? (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-muted text-muted-foreground font-sans">
+                                      Privacy Account ({selectedConversation.id.replace(/\D/g, '').slice(-4)})
+                                    </span>
+                                  </>
+                                ) : null}
+                                {selectedConversation.company && (
+                                  <span>• {selectedConversation.company}</span>
+                                )}
+                              </span>
                             )}
-                            <button
-                              type="button"
-                              onClick={() => handleCopyPhone(ident.phoneNumber)}
-                              className="text-[10px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 px-1.5 py-0.5 rounded border border-border/50 bg-muted/40 hover:bg-muted cursor-pointer ml-1"
-                              title="Copy phone number"
-                            >
-                              {isCopiedPhone ? (
-                                <>
-                                  <Check className="w-2.5 h-2.5 text-emerald-400" /> <span>Copied</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Copy className="w-2.5 h-2.5" /> <span>Copy</span>
-                                </>
-                              )}
-                            </button>
                           </div>
                         </div>
                       </>
@@ -1601,7 +1626,10 @@ export default function InboxLayout() {
                         {!isOutbound && (
                           !isSameSenderAsPrev ? (
                             <Avatar className="h-7 w-7 border shrink-0 bg-muted/40 mb-1">
-                              <AvatarImage src={selectedConversation.avatar} alt={senderDisplayName} />
+                              <AvatarImage
+                                src={selectedConversation.avatar && !selectedConversation.avatar.includes('placehold.co') ? selectedConversation.avatar : undefined}
+                                alt={senderDisplayName}
+                              />
                               <AvatarFallback className="text-[10px] font-semibold text-primary bg-primary/10">
                                 {getAvatarInitials(msg.senderName || selectedConversation.name, selectedConversation.id)}
                               </AvatarFallback>

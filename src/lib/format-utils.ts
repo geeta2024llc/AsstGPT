@@ -43,26 +43,33 @@ export function isSyntheticOrGenericName(name?: string): boolean {
 
 /**
  * Formats a raw phone number or WhatsApp JID into an international format.
+ * Returns empty string if the input is an @lid privacy ID, a contact name, or invalid.
  */
 export function formatPhoneNumber(raw?: string): string {
   if (!raw) return '';
 
-  // Clean out common WhatsApp JID suffixes
-  let cleaned = raw.replace(/@(s\.whatsapp\.net|lid|c\.us|newsletter|broadcast)/g, '').trim();
+  const str = raw.trim();
 
-  // If already formatted with spaces/dashes and starts with +, return it
-  if (cleaned.startsWith('+') && cleaned.includes(' ')) {
-    return cleaned;
+  // If raw is an @lid or contains @lid, it is an internal WhatsApp device ID, NOT a phone number
+  if (str.endsWith('@lid') || str.includes('@lid')) {
+    return '';
+  }
+
+  // If raw contains letters and does not end with @s.whatsapp.net, it's a contact name/tag, not a phone number
+  const withoutDomain = str.replace(/@(s\.whatsapp\.net|c\.us|broadcast|newsletter)/g, '').trim();
+  if (/[a-zA-Z\u0900-\u097F]/.test(withoutDomain)) {
+    return '';
   }
 
   // Extract only digits and possible leading plus
-  const hasPlus = cleaned.startsWith('+');
-  const digitsOnly = cleaned.replace(/\D/g, '');
+  const digitsOnly = withoutDomain.replace(/\D/g, '');
 
-  if (!digitsOnly) return raw;
+  if (!digitsOnly || digitsOnly.length < 7 || digitsOnly.length > 15) {
+    return '';
+  }
 
   // Nepal phone numbers (977...)
-  if (digitsOnly.startsWith('977') && digitsOnly.length >= 12) {
+  if (digitsOnly.startsWith('977') && (digitsOnly.length === 12 || digitsOnly.length === 13)) {
     const country = '+977';
     const main = digitsOnly.slice(3);
     if (main.length === 10) {
@@ -71,22 +78,27 @@ export function formatPhoneNumber(raw?: string): string {
     return `${country} ${main}`;
   }
 
-  // US/Canada numbers (1...)
+  // Local Nepal 10-digit mobile (98XXXXXXXX or 97XXXXXXXX)
+  if ((digitsOnly.startsWith('98') || digitsOnly.startsWith('97')) && digitsOnly.length === 10) {
+    return `+977 ${digitsOnly.slice(0, 4)}-${digitsOnly.slice(4)}`;
+  }
+
+  // US/Canada numbers (1...) with 11 digits
   if (digitsOnly.startsWith('1') && digitsOnly.length === 11) {
     return `+1 (${digitsOnly.slice(1, 4)}) ${digitsOnly.slice(4, 7)}-${digitsOnly.slice(7)}`;
   }
 
   // 10-digit US/North America local
-  if (digitsOnly.length === 10) {
+  if (digitsOnly.length === 10 && !digitsOnly.startsWith('98') && !digitsOnly.startsWith('97')) {
     return `(${digitsOnly.slice(0, 3)}) ${digitsOnly.slice(3, 6)}-${digitsOnly.slice(6)}`;
   }
 
-  // Standard generic international formatting
-  if (digitsOnly.length >= 7) {
+  // Standard generic international formatting (e.g. +44..., +91..., etc.)
+  if (digitsOnly.length >= 7 && digitsOnly.length <= 14) {
     return `+${digitsOnly}`;
   }
 
-  return hasPlus ? `+${digitsOnly}` : digitsOnly;
+  return '';
 }
 
 /**
@@ -109,15 +121,16 @@ export function formatContactName(name?: string, fallbackId?: string): string {
   const isLid = candidate.endsWith('@lid') || (fallbackId && fallbackId.endsWith('@lid'));
   const cleanedDigits = candidate.replace(/@(s\.whatsapp\.net|lid|c\.us)/g, '').replace(/\D/g, '');
 
-  if (isLid && cleanedDigits.length > 12) {
+  if (isLid && cleanedDigits.length >= 4) {
     return `WhatsApp User (${cleanedDigits.slice(-4)})`;
   }
 
-  if (cleanedDigits.length >= 7) {
-    return formatPhoneNumber(cleanedDigits);
+  const phone = formatPhoneNumber(candidate);
+  if (phone) {
+    return phone;
   }
 
-  return fallbackId?.split('@')[0] || 'WhatsApp Contact';
+  return cleanName || fallbackId?.split('@')[0] || 'WhatsApp Contact';
 }
 
 export interface ContactIdentifier {
@@ -133,31 +146,50 @@ export interface ContactIdentifier {
  */
 export function getContactIdentifier(name?: string, fallbackId?: string, company?: string): ContactIdentifier {
   const cleanName = (name || '').trim();
-  const phone = formatPhoneNumber(fallbackId || name);
   const isSynthetic = isSyntheticOrGenericName(cleanName);
+
+  // Check if fallbackId is an @lid
+  const isLid = Boolean(fallbackId && fallbackId.endsWith('@lid'));
+
+  // Extract real phone number ONLY if valid
+  let phone = '';
+  if (fallbackId && fallbackId.endsWith('@s.whatsapp.net')) {
+    phone = formatPhoneNumber(fallbackId);
+  } else if (fallbackId && !isLid) {
+    phone = formatPhoneNumber(fallbackId);
+  }
+  if (!phone && name) {
+    phone = formatPhoneNumber(name);
+  }
 
   let displayName = '';
   let hasCustomName = false;
 
-  if (!isSynthetic && cleanName) {
-    const hasLetters = /[a-zA-Z\u0900-\u097F]/.test(cleanName);
-    if (hasLetters) {
-      displayName = cleanName;
-      hasCustomName = true;
-    }
+  if (!isSynthetic && cleanName && /[a-zA-Z\u0900-\u097F]/.test(cleanName)) {
+    displayName = cleanName;
+    hasCustomName = true;
   }
 
   if (!displayName) {
-    displayName = phone || formatContactName(name, fallbackId);
-    hasCustomName = false;
+    if (phone) {
+      displayName = phone;
+      hasCustomName = false;
+    } else if (isLid) {
+      const lidDigits = (fallbackId || '').replace(/\D/g, '');
+      displayName = `WhatsApp User (${lidDigits.slice(-4)})`;
+      hasCustomName = false;
+    } else {
+      displayName = cleanName || 'WhatsApp Contact';
+      hasCustomName = false;
+    }
   }
 
   const avatarInitials = getAvatarInitials(displayName, fallbackId);
 
   return {
     displayName,
-    phoneNumber: phone || (fallbackId?.split('@')[0] || ''),
-    hasCustomName,
+    phoneNumber: phone, // will be empty string if no valid real phone number exists
+    hasCustomName: Boolean(hasCustomName && phone), // only true if custom name AND valid phone exist
     avatarInitials,
   };
 }
@@ -176,7 +208,7 @@ export function formatChatSubtitle(chatId?: string, company?: string): string {
   if (isPhone) {
     phoneDisplay = formatPhoneNumber(chatId);
   } else if (isLid) {
-    const rawNum = chatId.replace('@lid', '');
+    const rawNum = chatId.replace('@lid', '').replace(/\D/g, '');
     phoneDisplay = `LID: ${rawNum.slice(-6)}`;
   } else {
     phoneDisplay = formatPhoneNumber(chatId);

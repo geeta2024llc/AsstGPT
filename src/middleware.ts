@@ -13,7 +13,6 @@ const PUBLIC_PATHS = [
   '/api/auth',
   '/api/invite',
   '/api/widget',
-  '/api/whatsapp',
   '/_next',
   '/favicon.ico',
   '/assets',
@@ -64,6 +63,10 @@ export async function middleware(request: NextRequest) {
       isAuthenticated = true;
       resolvedUserRole = 'admin';
       resolvedTenantId = request.headers.get('x-tenant-id') || defaultTenantId;
+      // Even a trusted internal caller must not be able to act against a
+      // suspended tenant -- if this credential ever leaks, suspension
+      // should still hold.
+      checkTenantSuspension = true;
     } else if (supabaseUrl && supabaseAnonKey && !token.includes('placeholder')) {
       // B. Cryptographically verify Supabase User JWT against Supabase Auth API
       try {

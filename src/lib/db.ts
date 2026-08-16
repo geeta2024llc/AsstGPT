@@ -33,7 +33,12 @@ export async function ensureDefaultTenantAndChannel(explicitTenantId?: string): 
 
   const supabase = getSupabaseAdmin();
 
-  // 1. Ensure tenant exists
+  // 1. The tenant must already exist. Silently fabricating a phantom,
+  // ownerless tenant on an unrecognized id masks real problems (a
+  // misconfigured DEFAULT_TENANT_ID, or a stale JWT referencing a tenant
+  // that was since deleted) instead of surfacing them loudly. Real tenants
+  // are only ever created via POST /api/auth/signup or invitation
+  // acceptance -- neither of those paths calls this function.
   const { data: existingTenant } = await supabase
     .from('tenants')
     .select('id')
@@ -41,14 +46,9 @@ export async function ensureDefaultTenantAndChannel(explicitTenantId?: string): 
     .maybeSingle();
 
   if (!existingTenant) {
-    const { error: insertTenantError } = await supabase.from('tenants').insert({
-      id: tenantId,
-      name: `Workspace ${tenantId.slice(0, 8)}`,
-      slug: `workspace-${tenantId.slice(0, 8)}`,
-    });
-    if (insertTenantError) {
-      console.error('Failed to create tenant in Supabase:', insertTenantError);
-    }
+    throw new Error(
+      `Unknown tenant: no workspace exists with id "${tenantId}". Refusing to auto-provision a new one -- check DEFAULT_TENANT_ID configuration or whether this tenant was deleted.`
+    );
   }
 
   // 2. Ensure WhatsApp channel exists for this tenant
@@ -150,7 +150,7 @@ export async function updateTenantProfile(update: {
   return tenantRowToProfile(data);
 }
 
-export async function getConversations(options?: { limit?: number; offset?: number; contactId?: string }): Promise<Conversation[]> {
+export async function getConversations(options?: { limit?: number; offset?: number; contactId?: string; beforeLastMessageAt?: string }): Promise<Conversation[]> {
   try {
     const supabase = getSupabaseAdmin();
     const { tenantId } = await ensureDefaultTenantAndChannel();
@@ -191,6 +191,9 @@ export async function getConversations(options?: { limit?: number; offset?: numb
 
     if (options?.contactId) {
       query = query.eq('contact_id', options.contactId);
+    }
+    if (options?.beforeLastMessageAt) {
+      query = query.lt('last_message_at', options.beforeLastMessageAt);
     }
     if (options?.limit) {
       query = query.limit(options.limit);
@@ -240,7 +243,7 @@ export async function getConversations(options?: { limit?: number; offset?: numb
           text: c.last_message_text || '',
           timestamp: lastMsgTime,
         },
-        avatar: contact?.avatar_url || `https://placehold.co/100x100.png?text=${encodeURIComponent(displayName.charAt(0).toUpperCase())}`,
+        avatar: contact?.avatar_url && !contact.avatar_url.includes('placehold.co') ? contact.avatar_url : undefined,
         assignedAgentId: c.assigned_agent_id || undefined,
         isBotPaused: !!c.is_bot_paused,
         assignedUserId: c.assigned_user_id || undefined,
@@ -286,6 +289,31 @@ export function isConversationPaused(convo?: Partial<Conversation> | null): bool
 }
 
 export async function getConversation(id: string): Promise<Conversation | undefined> {
+  // Fast path: `id` is almost always a WhatsApp JID (contact_channels.external_id),
+  // which is indexed -- resolve it to a contact_id and scope getConversations()
+  // to that one contact instead of scanning the tenant's entire conversation
+  // list. Falls back to the full scan for the rarer synthetic-id cases
+  // (contact name or the conversation's own row id used as a display id).
+  try {
+    const supabase = getSupabaseAdmin();
+    const { tenantId } = await ensureDefaultTenantAndChannel();
+
+    const { data: channelMatch } = await supabase
+      .from('contact_channels')
+      .select('contact_id')
+      .eq('tenant_id', tenantId)
+      .eq('external_id', id)
+      .maybeSingle();
+
+    if (channelMatch?.contact_id) {
+      const scoped = await getConversations({ contactId: channelMatch.contact_id, limit: 10 });
+      const match = scoped.find((c) => c.id === id);
+      if (match) return match;
+    }
+  } catch (err) {
+    console.error('getConversation fast-path lookup failed, falling back to full scan:', err);
+  }
+
   const convos = await getConversations();
   return convos.find((c) => c.id === id);
 }
@@ -313,7 +341,7 @@ export async function updateConversation(
       // Create contact
       const isInvalidName = !update.name || update.name.toLowerCase() === 'me' || update.name.toLowerCase() === 'system';
       const contactName = (isInvalidName ? id.split('@')[0] : update.name) || id;
-      const avatarUrl = update.avatar || `https://placehold.co/100x100.png?text=${encodeURIComponent(contactName.charAt(0).toUpperCase())}`;
+      const avatarUrl = update.avatar && !update.avatar.includes('placehold.co') ? update.avatar : null;
 
       const { data: newContact, error: contactErr } = await supabase
         .from('contacts')
@@ -1254,52 +1282,28 @@ export async function updateTeamMember(
     const supabase = getSupabaseAdmin();
     const { tenantId } = await ensureDefaultTenantAndChannel();
 
-    const { data: existing, error: fetchErr } = await supabase
-      .from('tenant_members')
-      .select('role')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (fetchErr || !existing) {
-      throw new Error('Team member not found in this workspace');
-    }
-    if (existing.role === 'owner') {
-      throw new Error("The workspace owner's role cannot be changed here");
-    }
-    if (update.role === 'owner') {
-      throw new Error('Ownership cannot be granted through this action');
-    }
-
-    // Check last-admin guard if demoting an admin
-    if (existing.role === 'admin' && update.role && update.role !== 'admin' && !options?.confirmLastAdmin) {
-      const { data: otherAdmins } = await supabase
-        .from('tenant_members')
-        .select('user_id')
-        .eq('tenant_id', tenantId)
-        .eq('role', 'admin')
-        .neq('user_id', userId);
-      
-      if (!otherAdmins || otherAdmins.length === 0) {
-        throw new Error('CONFIRMATION_REQUIRED_LAST_ADMIN: This user is the last remaining administrator (aside from the owner). Confirmation is required to demote them.');
-      }
-    }
-
-    const payload: Record<string, unknown> = {};
-    if (update.role !== undefined) payload.role = update.role;
-    if (update.status !== undefined) payload.status = update.status;
-    if (update.assignedQueues !== undefined) payload.assigned_queues = update.assignedQueues;
-    if (update.avatarUrl !== undefined) payload.avatar_url = update.avatarUrl;
-
-    const { error } = await supabase
-      .from('tenant_members')
-      .update(payload)
-      .eq('tenant_id', tenantId)
-      .eq('user_id', userId);
+    // change_team_member_atomic locks the tenant's membership rows for the
+    // duration of the check-then-act sequence (existence/owner/last-admin
+    // guards + the mutation itself), so two concurrent role changes for the
+    // same tenant can no longer both independently pass the last-admin
+    // guard and together zero out every non-owner admin.
+    const { data: errorMessage, error } = await supabase.rpc('change_team_member_atomic', {
+      p_tenant_id: tenantId,
+      p_user_id: userId,
+      p_action: 'update',
+      p_new_role: update.role ?? null,
+      p_new_status: update.status ?? null,
+      p_new_assigned_queues: update.assignedQueues ?? null,
+      p_new_avatar_url: update.avatarUrl ?? null,
+      p_confirm_last_admin: !!options?.confirmLastAdmin,
+    });
 
     if (error) {
       console.error(`Failed to update tenant member ${userId}:`, error);
       throw error;
+    }
+    if (errorMessage) {
+      throw new Error(errorMessage as string);
     }
 
     // Synchronize Supabase Auth app_metadata live so active sessions reflect the new role immediately
@@ -1329,43 +1333,20 @@ export async function deleteTeamMember(
     const supabase = getSupabaseAdmin();
     const { tenantId } = await ensureDefaultTenantAndChannel();
 
-    const { data: existing, error: fetchErr } = await supabase
-      .from('tenant_members')
-      .select('role')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (fetchErr || !existing) {
-      throw new Error('Team member not found in this workspace');
-    }
-    if (existing.role === 'owner') {
-      throw new Error('The workspace owner cannot be removed');
-    }
-
-    // Check last-admin guard if removing an admin
-    if (existing.role === 'admin' && !options?.confirmLastAdmin) {
-      const { data: otherAdmins } = await supabase
-        .from('tenant_members')
-        .select('user_id')
-        .eq('tenant_id', tenantId)
-        .eq('role', 'admin')
-        .neq('user_id', userId);
-
-      if (!otherAdmins || otherAdmins.length === 0) {
-        throw new Error('CONFIRMATION_REQUIRED_LAST_ADMIN: This user is the last remaining administrator (aside from the owner). Confirmation is required to remove them.');
-      }
-    }
-
-    const { error } = await supabase
-      .from('tenant_members')
-      .delete()
-      .eq('tenant_id', tenantId)
-      .eq('user_id', userId);
+    // Same atomic guard as updateTeamMember -- see comment there.
+    const { data: errorMessage, error } = await supabase.rpc('change_team_member_atomic', {
+      p_tenant_id: tenantId,
+      p_user_id: userId,
+      p_action: 'delete',
+      p_confirm_last_admin: !!options?.confirmLastAdmin,
+    });
 
     if (error) {
       console.error(`Failed to delete tenant member ${userId}:`, error);
       throw error;
+    }
+    if (errorMessage) {
+      throw new Error(errorMessage as string);
     }
 
     // Re-synchronize or revoke Auth app_metadata live
@@ -2325,9 +2306,23 @@ export async function getAllContactProfiles(options?: {
       });
     }
 
+    const total = filteredClients.length;
+
+    // Pagination: the function has always accepted limit/offset, but they
+    // were silently ignored -- every call returned the full filtered list
+    // regardless of what page was requested. `total` still reflects the
+    // full filtered count (for page-count UI); `clients` is now the actual
+    // requested page.
+    let pagedClients = filteredClients;
+    if (options?.offset || options?.limit) {
+      const start = options?.offset || 0;
+      const end = options?.limit ? start + options.limit : undefined;
+      pagedClients = filteredClients.slice(start, end);
+    }
+
     return {
-      clients: filteredClients,
-      total: filteredClients.length,
+      clients: pagedClients,
+      total,
       stageCounts,
     };
   } catch (err) {
@@ -2673,15 +2668,23 @@ export async function recordWebhookDelivery(
 
 // --- SLA & Agent Performance Metrics ---
 
+const SLA_METRICS_LOOKBACK_DAYS = 90;
+
 export async function getSLAMetrics(): Promise<SLAMetrics> {
   try {
     const supabase = getSupabaseAdmin();
     const { tenantId } = await ensureDefaultTenantAndChannel();
 
+    // SLA/agent performance is inherently about recent activity -- bound the
+    // scan instead of fetching a tenant's entire conversation history on
+    // every dashboard load.
+    const lookbackSince = new Date(Date.now() - SLA_METRICS_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+
     const { data: convos, error } = await supabase
       .from('conversations')
       .select('assigned_user_id, status, sentiment, first_response_time_ms, resolution_duration_ms')
-      .eq('tenant_id', tenantId);
+      .eq('tenant_id', tenantId)
+      .gte('created_at', lookbackSince);
 
     const teamMembers = await getTeamMembers();
     const teamMemberMap = new Map<string, TeamMember>();
@@ -3055,15 +3058,16 @@ export async function getStaleConversationsForReEngagement(
   maxFollowUps = 1
 ): Promise<Conversation[]> {
   try {
-    const allConvos = await getConversations();
     const thresholdMs = Date.now() - (inactivityHours * 60 * 60 * 1000);
+    // Push the "older than threshold" filter down to the DB instead of
+    // scanning every conversation the tenant has ever had.
+    const staleConvos = await getConversations({ beforeLastMessageAt: new Date(thresholdMs).toISOString() });
 
-    return allConvos.filter((c) => {
+    return staleConvos.filter((c) => {
       if (c.status === 'resolved') return false;
       const count = c.reEngagementCount || (c.handoffMetadata?.reEngagementCount as number) || 0;
       if (count >= maxFollowUps) return false;
-      const lastTime = c.lastMessage.timestamp;
-      return lastTime < thresholdMs;
+      return true;
     });
   } catch (err) {
     console.error('Error in getStaleConversationsForReEngagement:', err);
