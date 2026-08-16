@@ -856,22 +856,22 @@ export default function InboxLayout() {
       >
         <div className="border-b p-3 space-y-2 bg-muted/20">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="font-headline text-lg font-semibold flex items-center gap-1.5">
+            <h2 className="font-headline text-lg font-semibold flex items-center gap-1.5 flex-wrap">
               <span>Inbox</span>
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4" title={`${filteredConversations.length} conversations in view`}>
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 whitespace-nowrap inline-flex items-center shrink-0 font-medium" title={`${filteredConversations.length} conversations in view`}>
                 {filteredConversations.length}
               </Badge>
               {handoffConvosCount > 0 && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 font-bold animate-pulse" title={`${handoffConvosCount} conversations in handoff`}>
-                  🚨 {handoffConvosCount} handoff
+                <Badge variant="outline" className="text-[10px] px-2 py-0.5 whitespace-nowrap inline-flex items-center gap-1 bg-amber-500/15 text-amber-500 border-amber-500/30 font-bold animate-pulse shrink-0" title={`${handoffConvosCount} conversations in handoff`}>
+                  <span>🚨 {handoffConvosCount} handoff</span>
                 </Badge>
               )}
               {totalUnreadConvos > 0 && (
-                <Badge variant="default" className="text-[10px] px-1.5 py-0 h-4 bg-primary text-primary-foreground font-bold" title={`${totalUnreadConvos} unread conversations`}>
-                  {totalUnreadConvos} unread
+                <Badge variant="default" className="text-[10px] px-2 py-0.5 whitespace-nowrap inline-flex items-center gap-1 bg-emerald-600 text-white font-bold shrink-0" title={`${totalUnreadConvos} unread conversations`}>
+                  <span>{totalUnreadConvos} unread</span>
                 </Badge>
               )}
-              <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 ml-1 font-normal">
+              <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 ml-1 font-normal shrink-0">
                 <Radio className="h-2.5 w-2.5 animate-pulse" />
                 <span>Live</span>
               </span>
@@ -1325,9 +1325,15 @@ export default function InboxLayout() {
                     value={selectedConversation.assignedUserId || 'unassigned'}
                     onValueChange={(val) => handleAssignTeamMember(selectedConversation.id, val)}
                   >
-                    <SelectTrigger className="h-8 text-xs w-[120px] sm:w-[145px] bg-background">
-                      <UserCheck className="h-3.5 w-3.5 mr-1 text-muted-foreground shrink-0" />
-                      <SelectValue placeholder="Assign Agent" />
+                    <SelectTrigger className="h-8 text-xs w-[130px] sm:w-[155px] bg-background gap-1.5 px-2.5 cursor-pointer">
+                      <UserCheck className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <SelectValue placeholder="Assign Agent">
+                        <span className="truncate text-xs">
+                          {selectedConversation.assignedUserId && selectedConversation.assignedUserId !== 'unassigned'
+                            ? (teamMembers.find(m => m.id === selectedConversation.assignedUserId)?.fullName || selectedConversation.assignedUser?.fullName || 'Assigned')
+                            : 'Unassigned'}
+                        </span>
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent align="end">
                       <SelectItem value="unassigned" className="text-xs font-medium">
