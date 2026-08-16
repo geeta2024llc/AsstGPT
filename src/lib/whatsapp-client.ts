@@ -20,6 +20,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import * as db from './db';
 import { getSupabaseAdmin } from './supabase';
+import { runWithRequestContext } from './request-context';
 import { generateAIResponse, retrieveRelevantKnowledgeContext, transcribeAudio, type MediaAttachment } from './ai';
 import { generateSpeechAudio } from './tts';
 import { evaluateHandoffRules, calculateAIConfidence } from './handoff-engine';
@@ -27,20 +28,27 @@ import { dispatchWebhookEvent } from './webhook-dispatcher';
 import { findDirectFaqMatch, dynamicResponseCache } from './faq-matcher';
 import type { Message, Agent } from '@/types';
 
-const WHATSAPP_AUTH_DIR = path.join(process.cwd(), 'whatsapp-auth');
+export const DEFAULT_TENANT_ID = process.env.DEFAULT_TENANT_ID || '00000000-0000-0000-0000-000000000001';
+
+/**
+ * Returns the sanitized directory path for storing a tenant's WhatsApp session files.
+ */
+export function getTenantAuthDir(tenantId: string = DEFAULT_TENANT_ID): string {
+  if (tenantId === DEFAULT_TENANT_ID || tenantId === 'default') {
+    return path.join(process.cwd(), 'whatsapp-auth');
+  }
+  const cleanId = tenantId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  return path.join(process.cwd(), 'whatsapp-auth', `tenant_${cleanId}`);
+}
 
 /**
  * Returns the best-fit Baileys browser descriptor string for the current OS.
- * This is purely metadata WhatsApp uses for analytics — choose something
- * plausible so that connections from Linux/Windows servers do not raise
- * suspicion.
  */
 function getHostBrowserDescriptor(): [string, string, string] {
   switch (process.platform) {
     case 'win32':
       return Browsers.windows('Desktop');
     case 'linux':
-      // "Ubuntu" is acceptable for the vast majority of server deployments
       return Browsers.ubuntu('Desktop');
     case 'darwin':
     default:
@@ -61,54 +69,118 @@ export interface WhatsAppClientState {
   reconnectAttempts: number;
 }
 
+export interface AuthStorageHealth {
+  authDir: string;
+  exists: boolean;
+  writable: boolean;
+  hasCredentials?: boolean;
+  error?: string;
+}
+
 export function isConversationPaused(convo?: any): boolean {
   return Boolean(convo && (convo.isBotPaused === true || convo.is_bot_paused === true));
 }
 
-// If a connection attempt hasn't opened (or closed) within this window, treat the
-// socket as a zombie and force it closed rather than waiting indefinitely on a
-// close event that may never arrive (e.g. a network path that silently
-// black-holes the WebSocket instead of erroring).
-//
-// Raised from 45s to 120s based on production CONN_DIAGNOSTIC evidence: every
-// observed teardown had selfInflictedTimeout: true and disconnectStatusCode:
-// null — WhatsApp never once sent a real rejection code, we simply killed the
-// socket first. Baileys also never emitted a second QR before the old 45s
-// timer expired, so a real human scanning a freshly-displayed QR (unlock
-// phone, open WhatsApp, navigate to Linked Devices, scan) routinely did not
-// finish in time. 120s comfortably covers that without meaningfully
-// delaying detection of an actually-dead socket.
 const CONNECT_TIMEOUT_MS = 120_000;
 
-// Use a simple global object for state management in Next.js dev environment
+// Multi-Tenant global state registry
 declare global {
-  var whatsappState: WhatsAppClientState;
+  var whatsappTenantStates: Map<string, WhatsAppClientState> | undefined;
+  var whatsappState: WhatsAppClientState | undefined;
   var whatsappWatchdog: NodeJS.Timer | undefined;
 }
 
-// Initialize the global state if it doesn't exist
-if (!global.whatsappState) {
-    global.whatsappState = {
-        sock: null,
-        status: 'disconnected',
-        qr: null,
-        account: null,
-        lastDisconnect: null,
-        connectingSince: null,
-        initializing: false,
-        reconnectAttempts: 0,
-    };
+if (!global.whatsappTenantStates) {
+  global.whatsappTenantStates = new Map<string, WhatsAppClientState>();
 }
 
-const state = global.whatsappState;
+export function getOrCreateTenantState(tenantId: string = DEFAULT_TENANT_ID): WhatsAppClientState {
+  let s = global.whatsappTenantStates!.get(tenantId);
+  if (!s) {
+    s = {
+      sock: null,
+      status: 'disconnected',
+      qr: null,
+      account: null,
+      lastDisconnect: null,
+      connectingSince: null,
+      initializing: false,
+      reconnectAttempts: 0,
+    };
+    global.whatsappTenantStates!.set(tenantId, s);
+  }
+  if (tenantId === DEFAULT_TENANT_ID || tenantId === 'default') {
+    global.whatsappState = s;
+  }
+  return s;
+}
+
+// Initialize default state
+const defaultState = getOrCreateTenantState(DEFAULT_TENANT_ID);
+export const state = defaultState;
+
 const inFlightMessageIds = new Set<string>();
 const chatMessageQueues = new Map<string, Promise<void>>();
 const consecutiveFallbacksMap = new Map<string, number>();
 
-function syncMirror() {
-  import('./whatsapp-leader').then(({ mirrorConnectionStateToDb }) => {
-    mirrorConnectionStateToDb().catch(() => {});
-  }).catch(() => {});
+async function syncTenantChannelMirror(tenantId: string, stateObj: WhatsAppClientState) {
+  try {
+    const supabaseAdmin = getSupabaseAdmin();
+    
+    // 1. Mirror to whatsapp_connection_state table
+    const channelKey = tenantId === DEFAULT_TENANT_ID ? 'default' : tenantId;
+    await supabaseAdmin.from('whatsapp_connection_state').upsert({
+      channel_id: channelKey,
+      status: stateObj.status,
+      qr: stateObj.qr,
+      account: stateObj.account,
+      last_disconnect: stateObj.lastDisconnect,
+      connecting_since: stateObj.connectingSince ? new Date(stateObj.connectingSince).toISOString() : null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'channel_id' });
+
+    // 2. Mirror to channels table for tenant isolation
+    const { data: channel } = await supabaseAdmin
+      .from('channels')
+      .select('id, metadata')
+      .eq('tenant_id', tenantId)
+      .eq('type', 'whatsapp')
+      .maybeSingle();
+
+    const existingMeta = (channel?.metadata as Record<string, any>) || {};
+    const updatedMeta = {
+      ...existingMeta,
+      account: stateObj.account,
+      phone: stateObj.account?.id?.split(':')[0]?.split('@')[0] || existingMeta.phone,
+      qr: stateObj.qr,
+      lastDisconnect: stateObj.lastDisconnect,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (channel) {
+      await supabaseAdmin
+        .from('channels')
+        .update({
+          status: stateObj.status,
+          external_account_id: stateObj.account?.id || (stateObj.status === 'connected' ? existingMeta.phone : null),
+          display_name: stateObj.account?.name || (stateObj.status === 'connected' ? 'WhatsApp Business' : 'WhatsApp Default'),
+          metadata: updatedMeta,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', channel.id);
+    } else {
+      await supabaseAdmin.from('channels').insert({
+        tenant_id: tenantId,
+        type: 'whatsapp',
+        status: stateObj.status,
+        external_account_id: stateObj.account?.id || null,
+        display_name: stateObj.account?.name || 'WhatsApp Default',
+        metadata: updatedMeta,
+      });
+    }
+  } catch (err) {
+    console.error(`[SYNC] Failed to mirror WhatsApp state to database for tenant ${tenantId}:`, err);
+  }
 }
 
 export function enqueueChatProcessing(chatId: string, task: () => Promise<void>): Promise<void> {
@@ -125,7 +197,7 @@ export function enqueueChatProcessing(chatId: string, task: () => Promise<void>)
   return nextQueue;
 }
 
-async function handleMessage(msg: WAMessage) {
+async function handleMessage(tenantId: string, msg: WAMessage) {
   try {
     if (
       !msg.message ||
@@ -151,24 +223,26 @@ async function handleMessage(msg: WAMessage) {
     setTimeout(() => inFlightMessageIds.delete(providerMessageId), 30_000);
 
     // Tenant Suspension Check: Halt processing and automated replies if workspace is suspended
-    const { tenantId } = await db.ensureDefaultTenantAndChannel();
+    const { tenantId: resolvedTenantId } = await db.ensureDefaultTenantAndChannel(tenantId);
     const supabaseAdmin = getSupabaseAdmin();
     const { data: tenantRow } = await supabaseAdmin
       .from('tenants')
       .select('is_active')
-      .eq('id', tenantId)
+      .eq('id', resolvedTenantId)
       .maybeSingle();
 
     if (tenantRow && tenantRow.is_active === false) {
-      console.warn(`[SUSPENDED] Inbound WhatsApp message dropped for suspended tenant ${tenantId}`);
+      console.warn(`[SUSPENDED] Inbound WhatsApp message dropped for suspended tenant ${resolvedTenantId}`);
       await db.addLog({
         user: 'System',
         action: 'Inbound Message Dropped',
-        details: `Tenant ${tenantId} is suspended. Inbound message from ${chatId} was halted.`,
+        details: `Tenant ${resolvedTenantId} is suspended. Inbound message from ${chatId} was halted.`,
         type: 'warning',
       });
       return;
     }
+
+    const tenantState = getOrCreateTenantState(resolvedTenantId);
 
     // Extract message content and media attachments
     let messageContent = '';
@@ -187,7 +261,7 @@ async function handleMessage(msg: WAMessage) {
           {},
           {
             logger: pino({ level: 'silent' }),
-            reuploadRequest: state.sock?.updateMediaMessage as any,
+            reuploadRequest: tenantState.sock?.updateMediaMessage as any,
           }
         );
         const mimeType = msg.message.audioMessage.mimetype || 'audio/ogg';
@@ -215,7 +289,7 @@ async function handleMessage(msg: WAMessage) {
           {},
           {
             logger: pino({ level: 'silent' }),
-            reuploadRequest: state.sock?.updateMediaMessage as any,
+            reuploadRequest: tenantState.sock?.updateMediaMessage as any,
           }
         );
         mediaAttachment = {
@@ -244,7 +318,7 @@ async function handleMessage(msg: WAMessage) {
           {},
           {
             logger: pino({ level: 'silent' }),
-            reuploadRequest: state.sock?.updateMediaMessage as any,
+            reuploadRequest: tenantState.sock?.updateMediaMessage as any,
           }
         );
         mediaAttachment = {
@@ -323,7 +397,6 @@ async function handleMessage(msg: WAMessage) {
       timestamp: message.timestamp,
     }).catch(err => console.error('Webhook dispatch error:', err));
 
-    // If message is from me, do not initiate automated agent response pipeline
     if (message.fromMe) return;
 
     // Auto-reopen conversation if it was previously marked resolved
@@ -359,7 +432,7 @@ async function handleMessage(msg: WAMessage) {
 
     const currentFallbacks = consecutiveFallbacksMap.get(chatId) || 0;
 
-    // 5. Evaluate Automated Pre-Generation Handoff Rules (Keywords, Intents, Consecutive Fallbacks)
+    // 5. Evaluate Automated Pre-Generation Handoff Rules
     const preHandoff = await evaluateHandoffRules({
       messageText: messageContent,
       history,
@@ -402,7 +475,7 @@ async function handleMessage(msg: WAMessage) {
 
       if (rule.actions.transitionMessage) {
         try {
-          await sendMessage(chatId, rule.actions.transitionMessage);
+          await sendMessageForTenant(resolvedTenantId, chatId, rule.actions.transitionMessage);
         } catch (sendErr) {
           console.error('Failed to send automated transition message:', sendErr);
         }
@@ -423,7 +496,7 @@ async function handleMessage(msg: WAMessage) {
     let responseText: string | undefined;
     let ragContextString: string = '';
 
-    // Step A: Exact/Fuzzy FAQ Match ($0.00 cost, <5ms latency)
+    // Step A: Exact/Fuzzy FAQ Match
     if (agent.aiSettings && agent.aiSettings.knowledgeFileIds && agent.aiSettings.knowledgeFileIds.length > 0) {
       const faqMatch = await findDirectFaqMatch(messageContent, agent.aiSettings.knowledgeFileIds);
       if (faqMatch && faqMatch.answer) {
@@ -437,7 +510,7 @@ async function handleMessage(msg: WAMessage) {
       }
     }
 
-    // Step B: In-Memory Dynamic Response Cache ($0.00 cost, <1ms latency)
+    // Step B: In-Memory Dynamic Response Cache
     if (!responseText) {
       const cached = dynamicResponseCache.get(messageContent);
       if (cached) {
@@ -451,7 +524,7 @@ async function handleMessage(msg: WAMessage) {
       }
     }
 
-    // Step C: Fall back to Gemini LLM only when query is not in FAQ or Cache
+    // Step C: Fall back to Gemini LLM
     if (!responseText && agent.mode === 'ai' && agent.aiSettings) {
       try {
         const { context: ragContext, sourcesUsed, chunkCount } = await retrieveRelevantKnowledgeContext(messageContent, agent.aiSettings.knowledgeFileIds);
@@ -467,7 +540,6 @@ async function handleMessage(msg: WAMessage) {
 
         responseText = await generateAIResponse(messageContent, agent.aiSettings, history, mediaAttachment);
         if (responseText) {
-          // Cache successful LLM response for repeat inquiries
           if (!mediaAttachment && responseText.length > 5) {
             dynamicResponseCache.set(messageContent, responseText);
           }
@@ -488,7 +560,6 @@ async function handleMessage(msg: WAMessage) {
           type: 'error',
         });
 
-        // Trigger emergency human handoff for infrastructure failures
         await db.setConversationTakeover(
           chatId,
           true,
@@ -546,7 +617,7 @@ async function handleMessage(msg: WAMessage) {
 
         if (rule.actions.transitionMessage) {
           try {
-            await sendMessage(chatId, rule.actions.transitionMessage);
+            await sendMessageForTenant(resolvedTenantId, chatId, rule.actions.transitionMessage);
           } catch (sendErr) {
             console.error('Failed to send low-confidence transition message:', sendErr);
           }
@@ -555,7 +626,7 @@ async function handleMessage(msg: WAMessage) {
       }
     }
 
-    // Rule-based fallback if not AI mode or if AI response returned empty
+    // Rule-based fallback
     if (!responseText) {
       const lowerText = messageContent.toLowerCase();
       for (const rule of agent.rules) {
@@ -588,8 +659,6 @@ async function handleMessage(msg: WAMessage) {
       return;
     }
 
-    // 5. Send Outbound Response via WhatsApp & Persist to Supabase
-    // If incoming message was a voice note OR if agent has voice responses enabled, reply with voice note
     const shouldSendVoice = (isVoiceNote || agent.aiSettings?.enableVoiceResponse) && !!responseText;
 
     try {
@@ -601,116 +670,51 @@ async function handleMessage(msg: WAMessage) {
             voice: agent.aiSettings?.voiceName,
           });
 
-          // Second Guard: Check immediately before irreversible socket dispatch (post-TTS generation)
           const immediateConvo = await db.getConversation(chatId);
           if (isConversationPaused(immediateConvo)) {
             console.log(`[HANDOFF RACE GUARD] Takeover engaged during TTS generation for ${chatId}. Aborting voice note send.`);
             return;
           }
 
-          await sendVoiceNote(chatId, audioBuffer, responseText);
-          await db.addLog({
-            user: agent.name,
-            action: 'Auto-response Sent (Voice Note)',
-            details: responseText.slice(0, 120),
-            type: 'success',
-          });
+          await sendVoiceNoteForTenant(resolvedTenantId, chatId, audioBuffer, responseText);
         } catch (ttsErr) {
-          console.warn('Voice response generation failed, falling back to text:', ttsErr);
-          const fallbackConvo = await db.getConversation(chatId);
-          if (isConversationPaused(fallbackConvo)) {
-            console.log(`[HANDOFF RACE GUARD] Takeover engaged during TTS failure for ${chatId}. Aborting fallback text send.`);
-            return;
-          }
-
-          await sendMessage(chatId, responseText);
-          await db.addLog({
-            user: agent.name,
-            action: 'Auto-response Sent (Text Fallback)',
-            details: responseText.slice(0, 120),
-            type: 'success',
-          });
+          console.error('[TTS ERROR] Fallback to text:', ttsErr);
+          await sendMessageForTenant(resolvedTenantId, chatId, responseText);
         }
       } else {
-        // Immediate pre-send check before text socket dispatch
-        const immediateConvo = await db.getConversation(chatId);
-        if (isConversationPaused(immediateConvo)) {
-          console.log(`[HANDOFF RACE GUARD] Takeover engaged before text dispatch for ${chatId}. Aborting message send.`);
-          return;
-        }
-
-        await sendMessage(chatId, responseText);
-        await db.addLog({
-          user: agent.name,
-          action: 'Auto-response Sent',
-          details: responseText.slice(0, 120),
-          type: 'success',
-        });
+        await sendMessageForTenant(resolvedTenantId, chatId, responseText);
       }
     } catch (sendErr) {
-      console.error('Failed to send auto-response:', sendErr);
-      await db.addLog({
-        user: agent.name,
-        action: 'Auto-response Failed',
-        details: (sendErr as Error).message,
-        type: 'error',
-      });
+      console.error('Failed to dispatch automated response via WhatsApp:', sendErr);
     }
   } catch (error) {
-    console.error('Error handling WhatsApp message:', error);
-    try {
-      await db.addLog({
-        user: 'System',
-        action: 'Message Processing Failed',
-        details: (error as Error).message,
-        type: 'error',
-      });
-    } catch (_) {/* ignore logging failure to avoid crash loop */}
+    console.error(`[HANDLE_MESSAGE ERROR] Failed to process message for tenant ${tenantId}:`, error);
   }
 }
 
-export interface AuthStorageHealth {
-  directory: string;
-  exists: boolean;
-  writable: boolean;
-  hasCredentials: boolean;
-  error: string | null;
-}
-
-/**
- * Validates and prepares the auth storage directory.
- * - Ensures the target directory exists.
- * - Tests write/read/unlink permissions safely using a transient probe file.
- * - Detects and cleans up empty (0-byte) or corrupt creds.json files to ensure self-healing.
- */
-export async function verifyAndPrepareAuthStorage(): Promise<AuthStorageHealth> {
+export async function verifyAndPrepareAuthStorage(authDir: string = getTenantAuthDir(DEFAULT_TENANT_ID)): Promise<AuthStorageHealth> {
   const health: AuthStorageHealth = {
-    directory: WHATSAPP_AUTH_DIR,
+    authDir,
     exists: false,
     writable: false,
-    hasCredentials: false,
-    error: null,
   };
 
   try {
-    await fs.mkdir(WHATSAPP_AUTH_DIR, { recursive: true });
+    await fs.mkdir(authDir, { recursive: true });
     health.exists = true;
 
-    // Test write permission with a lightweight probe file
-    const probePath = path.join(WHATSAPP_AUTH_DIR, `.probe-${Date.now()}`);
+    const probePath = path.join(authDir, `.probe-${Date.now()}`);
     await fs.writeFile(probePath, 'ok', 'utf-8');
     await fs.unlink(probePath);
     health.writable = true;
 
-    const credsPath = path.join(WHATSAPP_AUTH_DIR, 'creds.json');
+    const credsPath = path.join(authDir, 'creds.json');
     try {
       const stat = await fs.stat(credsPath);
       if (stat.size === 0) {
-        console.warn('STORAGE_CHECK: Detected 0-byte corrupt creds.json, clearing to allow clean pairing...');
         await fs.unlink(credsPath);
         health.hasCredentials = false;
       } else {
-        // Sanity check JSON readability
         const content = await fs.readFile(credsPath, 'utf-8');
         JSON.parse(content);
         health.hasCredentials = true;
@@ -719,271 +723,222 @@ export async function verifyAndPrepareAuthStorage(): Promise<AuthStorageHealth> 
       if (err?.code === 'ENOENT') {
         health.hasCredentials = false;
       } else if (err instanceof SyntaxError) {
-        console.warn('STORAGE_CHECK: Detected malformed JSON in creds.json, clearing to allow clean recovery...');
         await fs.unlink(credsPath).catch(() => {});
         health.hasCredentials = false;
-      } else {
-        console.warn('STORAGE_CHECK: Error inspecting creds.json:', err);
       }
     }
   } catch (err: any) {
-    console.error('STORAGE_CHECK: Failed storage permission or access check for WHATSAPP_AUTH_DIR:', err);
     health.error = err?.message || String(err);
   }
 
   return health;
 }
 
-export async function getAuthStorageHealth(): Promise<AuthStorageHealth> {
-  return verifyAndPrepareAuthStorage();
+export async function getAuthStorageHealth(tenantId: string = DEFAULT_TENANT_ID): Promise<AuthStorageHealth> {
+  return verifyAndPrepareAuthStorage(getTenantAuthDir(tenantId));
 }
 
-/**
- * Safely clears all auth state files inside WHATSAPP_AUTH_DIR.
- * Deletes file contents instead of deleting the directory itself, because when
- * WHATSAPP_AUTH_DIR is a mounted Docker volume (e.g. on Railway), rmdir on the
- * mount point fails with EACCES / EBUSY.
- */
-async function clearAuthDirectory() {
+async function clearAuthDirectory(authDir: string = getTenantAuthDir(DEFAULT_TENANT_ID)) {
   try {
-    const files = await fs.readdir(WHATSAPP_AUTH_DIR);
+    const files = await fs.readdir(authDir);
     for (const file of files) {
-      await fs.rm(path.join(WHATSAPP_AUTH_DIR, file), { recursive: true, force: true });
+      await fs.rm(path.join(authDir, file), { recursive: true, force: true });
     }
-    console.log('LOGOUT: Session directory contents cleared.');
+    console.log(`LOGOUT: Session directory contents cleared at ${authDir}`);
   } catch (e: any) {
     if (e?.code !== 'ENOENT') {
-      console.error('LOGOUT: Error clearing session directory contents.', e);
+      console.error(`LOGOUT: Error clearing session directory contents at ${authDir}:`, e);
     }
   }
 }
 
 /**
- * Forcefully disconnects, cleans up listeners, and deletes session files.
- * This is the "nuke" option for a guaranteed clean slate.
+ * Logs out and clears the WhatsApp session for a specific tenant.
  */
-export async function logout() {
-  console.log('LOGOUT: Starting full cleanup...');
-  if (state.sock) {
-    console.log('LOGOUT: Logging out of existing socket.');
+export async function logoutTenant(tenantId: string = DEFAULT_TENANT_ID) {
+  const tenantState = getOrCreateTenantState(tenantId);
+  const authDir = getTenantAuthDir(tenantId);
+
+  console.log(`LOGOUT: Starting cleanup for workspace "${tenantId}"...`);
+  if (tenantState.sock) {
     try {
-      // It's possible the socket is already dead, so we wrap this
-      await state.sock.logout();
+      await tenantState.sock.logout();
     } catch (e) {
-      console.error('LOGOUT: Error on logout, probably already disconnected.', e);
+      console.error(`LOGOUT: Error on logout for ${tenantId}:`, e);
     } finally {
-      // This is crucial to prevent memory leaks and ghost processes
-      (state.sock?.ev as any)?.removeAllListeners();
-      state.sock = null;
+      try {
+        (tenantState.sock?.ev as any)?.removeAllListeners();
+      } catch (_) {}
+      tenantState.sock = null;
     }
   }
-  
-  await clearAuthDirectory();
 
-  // Reset in-memory state
-  state.status = 'disconnected';
-  state.qr = null;
-  state.account = null;
-  state.lastDisconnect = null;
-  syncMirror();
-  console.log('LOGOUT: In-memory state has been reset.');
+  await clearAuthDirectory(authDir);
+
+  tenantState.status = 'disconnected';
+  tenantState.qr = null;
+  tenantState.account = null;
+  tenantState.lastDisconnect = null;
+  tenantState.connectingSince = null;
+
+  await syncTenantChannelMirror(tenantId, tenantState);
+  console.log(`LOGOUT: In-memory & DB state reset for tenant "${tenantId}".`);
+}
+
+export async function logout() {
+  return logoutTenant(DEFAULT_TENANT_ID);
 }
 
 /**
- * Initializes a new WhatsApp connection.
- * It attempts to use an existing session if available.
+ * Initializes a new WhatsApp connection for a specific tenant.
  */
-export async function init() {
-  // If a connection is already open or in progress, do nothing.
-  // The UI should call logout() first if it wants a fresh start.
-  // If a socket connection already exists, avoid creating another.
-  //
-  // `state.initializing` is set synchronously below, before any await, so it
-  // closes the race that `state.sock` alone cannot: state.sock is only
-  // assigned after two real I/O operations (useMultiFileAuthState,
-  // fetchLatestBaileysVersion), and a second init() call — from the
-  // watchdog, from POST /api/whatsapp/init, or from a reconnect — landing in
-  // that gap would previously slip past the state.sock check and create a
-  // second live Baileys socket against the same auth directory.
-  if (state.sock || state.initializing) {
-    console.log(`INIT: Skipped, current status is "${state.status}"`);
+export async function initTenant(tenantId: string = DEFAULT_TENANT_ID) {
+  const tenantState = getOrCreateTenantState(tenantId);
+  const authDir = getTenantAuthDir(tenantId);
+
+  if (tenantState.sock || tenantState.initializing) {
+    console.log(`INIT: Skipped for tenant ${tenantId}, current status is "${tenantState.status}"`);
     return;
   }
-  state.initializing = true;
+  tenantState.initializing = true;
 
-  console.log('INIT: Starting connection process...');
-  state.status = 'connecting';
-  state.connectingSince = Date.now();
-  syncMirror();
+  console.log(`INIT: Starting WhatsApp connection process for tenant "${tenantId}"...`);
+  tenantState.status = 'connecting';
+  tenantState.connectingSince = Date.now();
+  await syncTenantChannelMirror(tenantId, tenantState);
 
   try {
-    // 1. Verify filesystem write permissions and heal any corrupt 0-byte credentials
-    const storageHealth = await verifyAndPrepareAuthStorage();
+    const storageHealth = await verifyAndPrepareAuthStorage(authDir);
     if (!storageHealth.writable) {
-      throw new Error(`WhatsApp storage at "${WHATSAPP_AUTH_DIR}" is not writable: ${storageHealth.error || 'Permission Denied'}`);
+      throw new Error(`WhatsApp storage at "${authDir}" is not writable: ${storageHealth.error || 'Permission Denied'}`);
     }
 
-    const { state: authState, saveCreds } = await useMultiFileAuthState(WHATSAPP_AUTH_DIR);
-
-    // Ensure we're always using the latest WhatsApp Web version to avoid 515 errors
+    const { state: authState, saveCreds } = await useMultiFileAuthState(authDir);
     const { version: waVersion } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
-        logger: pino({ level: 'info' }),
-        printQRInTerminal: false,
-        auth: authState,
-              // Choose a browser descriptor appropriate to the host OS so the code works
-        // identically on macOS, Linux & Windows deployments.
-        browser: getHostBrowserDescriptor(),
-        markOnlineOnConnect: true,
-        connectTimeoutMs: 30_000,
-        syncFullHistory: false,
-        version: waVersion,
+      logger: pino({ level: 'info' }),
+      printQRInTerminal: false,
+      auth: authState,
+      browser: getHostBrowserDescriptor(),
+      markOnlineOnConnect: true,
+      connectTimeoutMs: 30_000,
+      syncFullHistory: false,
+      version: waVersion,
     });
 
-    state.sock = sock;
-    // The socket now exists, so the `state.sock` check in the guard above is
-    // sufficient on its own again; release the synchronous guard.
-    state.initializing = false;
+    tenantState.sock = sock;
+    tenantState.initializing = false;
 
-    // Belt-and-suspenders on top of connectTimeoutMs: if the connection hasn't
-    // reached 'open' (or 'close') within CONNECT_TIMEOUT_MS, force it closed so
-    // the socket can never sit as a zombie in state.sock while status stays
-    // stuck at 'connecting' forever (that state previously made the watchdog's
-    // recovery attempts permanently no-ops, since init() bails out whenever
-    // state.sock is set).
     const armConnectTimeout = () => setTimeout(() => {
-        console.warn(`INIT: Connection did not open within ${CONNECT_TIMEOUT_MS}ms, forcing teardown...`);
-        sock.end(new Error('Connect timeout: no open/close event received'));
+      console.warn(`INIT: Connection timeout for tenant ${tenantId}, forcing teardown...`);
+      sock.end(new Error('Connect timeout: no open/close event received'));
     }, CONNECT_TIMEOUT_MS);
     let connectTimeoutTimer = armConnectTimeout();
 
-    // Attach event listeners with error-boundary protection around disk writes
     sock.ev.on('creds.update', async () => {
       try {
         await saveCreds();
       } catch (saveErr) {
-        console.error('CRITICAL: Failed to save WhatsApp credentials to disk:', saveErr);
+        console.error(`CRITICAL: Failed to save WhatsApp credentials to disk for tenant ${tenantId}:`, saveErr);
       }
     });
 
     sock.ev.on('messages.upsert', (update) => {
       for (const msg of update.messages) {
         const jid = msg.key.remoteJid;
+        const task = () => runWithRequestContext(
+          {
+            tenantId,
+            userId: '00000000-0000-0000-0000-000000000001',
+            userRole: 'admin',
+            userEmail: 'system@asstgpt.local',
+          },
+          () => handleMessage(tenantId, msg)
+        );
+
         if (jid) {
-          enqueueChatProcessing(jid, () => handleMessage(msg));
+          enqueueChatProcessing(jid, task);
         } else {
-          handleMessage(msg);
+          task();
         }
       }
     });
 
     sock.ev.on('connection.update', async (update) => {
-      const { connection, lastDisconnect, qr: newQr, isNewLogin, receivedPendingNotifications } = update;
-      console.log(`CONN_UPDATE: status=${connection}, qr=${!!newQr}`);
-
-      // Structured, secret-free diagnostic snapshot of the QR-scan -> paired
-      // transition. Never logs QR contents, credentials, or phone numbers —
-      // only connection-state metadata and, on close, the disconnect's real
-      // Boom status code/name so a genuine WhatsApp-side rejection can be
-      // told apart from our own synthetic connect-timeout teardown (which
-      // surfaces as a plain Error with no statusCode, i.e. disconnectStatusCode: null).
-      const disconnectErr = lastDisconnect?.error as (Boom | Error | undefined);
-      console.log('DISCONNECT_FULL_ERROR:', disconnectErr?.name, disconnectErr?.message, disconnectErr?.stack);
-      const disconnectStatusCode = (disconnectErr as Boom | undefined)?.output?.statusCode ?? null;
-      const selfInflicted = disconnectErr?.message === 'Connect timeout: no open/close event received'
-        || disconnectErr?.message === 'Watchdog: stale connecting state';
-      console.log('CONN_DIAGNOSTIC ' + JSON.stringify({
-        connection: connection ?? null,
-        hasQr: !!newQr,
-        isNewLogin: isNewLogin ?? null,
-        receivedPendingNotifications: receivedPendingNotifications ?? null,
-        disconnectStatusCode,
-        disconnectErrorName: disconnectErr?.name ?? null,
-        disconnectErrorMessage: disconnectErr?.message ?? null,
-        selfInflictedTimeout: selfInflicted,
-      }));
+      const { connection, lastDisconnect, qr: newQr } = update;
+      console.log(`CONN_UPDATE [${tenantId}]: status=${connection}, qr=${!!newQr}`);
 
       if (newQr) {
-          state.qr = await qr.toDataURL(newQr);
-          state.lastDisconnect = null;
-          if (state.status !== 'connected') {
-              // Only go to connecting if we aren't already connected
-              state.status = 'connecting';
-          }
-          syncMirror();
-          // A QR was successfully issued, proving the socket is alive (not a
-          // zombie handshake). Re-arm the teardown timer from this point so the
-          // user gets a full CONNECT_TIMEOUT_MS window to scan it, instead of
-          // being judged against a clock that started when init() first ran
-          // (before this QR — or any QR — existed).
-          clearTimeout(connectTimeoutTimer);
-          state.connectingSince = Date.now();
-          connectTimeoutTimer = armConnectTimeout();
+        tenantState.qr = await qr.toDataURL(newQr);
+        tenantState.lastDisconnect = null;
+        if (tenantState.status !== 'connected') {
+          tenantState.status = 'connecting';
+        }
+        await syncTenantChannelMirror(tenantId, tenantState);
+        clearTimeout(connectTimeoutTimer);
+        tenantState.connectingSince = Date.now();
+        connectTimeoutTimer = armConnectTimeout();
       }
 
       if (connection === 'open') {
-          clearTimeout(connectTimeoutTimer);
-          state.reconnectAttempts = 0;
-          state.status = 'connected';
-          state.qr = null;
-          state.lastDisconnect = null;
-          state.connectingSince = null;
-          state.account = { id: sock.user!.id, name: sock.user!.name || 'N/A' };
-          console.log('CONN_UPDATE: Connection opened successfully.');
-          syncMirror();
+        clearTimeout(connectTimeoutTimer);
+        tenantState.reconnectAttempts = 0;
+        tenantState.status = 'connected';
+        tenantState.qr = null;
+        tenantState.lastDisconnect = null;
+        tenantState.connectingSince = null;
+        tenantState.account = { id: sock.user!.id, name: sock.user!.name || 'N/A' };
+        console.log(`CONN_UPDATE [${tenantId}]: Connection opened successfully.`);
+        await syncTenantChannelMirror(tenantId, tenantState);
       }
 
       if (connection === 'close') {
-          clearTimeout(connectTimeoutTimer);
-          const code = (lastDisconnect?.error as Boom | undefined)?.output?.statusCode;
-          // Cleanly remove all listeners from this socket to avoid duplicate events during reconnect
-          try {
-              // removeAllListeners typing mismatch in Baileys; cast to any to avoid TS error
-              (sock.ev as any).removeAllListeners();
-          } catch (_) {/* ignore */}
+        clearTimeout(connectTimeoutTimer);
+        const code = (lastDisconnect?.error as Boom | undefined)?.output?.statusCode;
+        try {
+          (sock.ev as any).removeAllListeners();
+        } catch (_) {}
 
-          const reasonString = lastDisconnect?.error?.message || 'Unknown Disconnect';
-          state.lastDisconnect = { reason: `Error: ${reasonString}`, date: new Date().toISOString() };
+        const reasonString = lastDisconnect?.error?.message || 'Unknown Disconnect';
+        tenantState.lastDisconnect = { reason: `Error: ${reasonString}`, date: new Date().toISOString() };
 
-          // Reconnect automatically for all reasons except an explicit logout
-          // Avoid reconnect loop if our session was replaced elsewhere (code 440)
-          const shouldReconnect = code !== DisconnectReason.loggedOut && code !== DisconnectReason.connectionReplaced;
+        const shouldReconnect = code !== DisconnectReason.loggedOut && code !== DisconnectReason.connectionReplaced;
 
-          if (shouldReconnect) {
-              state.reconnectAttempts++;
-              const backoffDelay = Math.min(1000 * Math.pow(1.5, Math.min(state.reconnectAttempts - 1, 8)), 30000) + Math.floor(Math.random() * 1000);
-              console.log(`CONN_UPDATE: Connection closed (code=${code}). Attempting automatic reconnect (#${state.reconnectAttempts}) in ${backoffDelay}ms...`);
-              // Notify UI that we're attempting to restore the session
-              state.status = 'connecting';
-              state.sock = null;
-              state.account = null;
-              syncMirror();
-              // Exponential backoff with jitter
-              setTimeout(() => {
-                  init().catch((err) => console.error('Re-init failed:', err));
-              }, backoffDelay);
-          } else {
-              // code is loggedOut (401) or connectionReplaced (440): WhatsApp has
-              // invalidated this session server-side.
-              state.reconnectAttempts = 0;
-              console.log(`CONN_UPDATE: Logged out by user/device (code=${code}). Clearing stale session and waiting for fresh QR rescan.`);
-              await clearAuthDirectory();
-              state.status = 'disconnected';
-              state.sock = null;
-              state.account = null;
-              state.connectingSince = null;
-              syncMirror();
-          }
+        if (shouldReconnect) {
+          tenantState.reconnectAttempts++;
+          const backoffDelay = Math.min(1000 * Math.pow(1.5, Math.min(tenantState.reconnectAttempts - 1, 8)), 30000) + Math.floor(Math.random() * 1000);
+          console.log(`CONN_UPDATE [${tenantId}]: Closed (code=${code}). Reconnecting in ${backoffDelay}ms...`);
+          tenantState.status = 'connecting';
+          tenantState.sock = null;
+          tenantState.account = null;
+          await syncTenantChannelMirror(tenantId, tenantState);
+          setTimeout(() => {
+            initTenant(tenantId).catch((err) => console.error(`Re-init failed for ${tenantId}:`, err));
+          }, backoffDelay);
+        } else {
+          tenantState.reconnectAttempts = 0;
+          console.log(`CONN_UPDATE [${tenantId}]: Logged out by server/user (code=${code}). Clearing session.`);
+          await clearAuthDirectory(authDir);
+          tenantState.status = 'disconnected';
+          tenantState.sock = null;
+          tenantState.account = null;
+          tenantState.connectingSince = null;
+          await syncTenantChannelMirror(tenantId, tenantState);
+        }
       }
     });
   } catch (error) {
-    console.error('INIT: Failed to establish connection', error);
-    state.sock = null;
-    state.status = 'error';
-    state.connectingSince = null;
-    state.initializing = false;
+    console.error(`INIT: Failed to establish connection for tenant ${tenantId}:`, error);
+    tenantState.sock = null;
+    tenantState.status = 'error';
+    tenantState.connectingSince = null;
+    tenantState.initializing = false;
   }
+}
+
+export async function init() {
+  return initTenant(DEFAULT_TENANT_ID);
 }
 
 // ----------------- Graceful Process Shutdown & Lifecycle -----------------
@@ -995,127 +950,193 @@ const isTestOrScript = typeof process !== 'undefined' && (
 );
 
 if (typeof process !== 'undefined' && !isBuilding && !isTestOrScript) {
-    const handleGracefulShutdown = async (signal: string) => {
-        console.log(`[SHUTDOWN] Received ${signal}. Closing WhatsApp socket cleanly...`);
-        if (state.sock) {
-            try {
-                state.sock.end(new Error(`Graceful shutdown via ${signal}`));
-            } catch (err) {
-                console.error('Error closing socket on shutdown:', err);
-            }
+  const handleGracefulShutdown = async (signal: string) => {
+    console.log(`[SHUTDOWN] Received ${signal}. Closing all WhatsApp sockets cleanly...`);
+    if (global.whatsappTenantStates) {
+      for (const [tId, tState] of global.whatsappTenantStates.entries()) {
+        if (tState.sock) {
+          try {
+            tState.sock.end(new Error(`Graceful shutdown via ${signal}`));
+          } catch (err) {
+            console.error(`Error closing socket on shutdown for tenant ${tId}:`, err);
+          }
         }
-    };
-    process.once('SIGTERM', () => handleGracefulShutdown('SIGTERM'));
-    process.once('SIGINT', () => handleGracefulShutdown('SIGINT'));
+      }
+    }
+  };
+  process.once('SIGTERM', () => handleGracefulShutdown('SIGTERM'));
+  process.once('SIGINT', () => handleGracefulShutdown('SIGINT'));
 }
 
-// ----------------- Watchdog & Auto-Init -----------------
+// ----------------- Watchdog & Auto-Init for Default Tenant -----------------
 
 if (!global.whatsappWatchdog && !isBuilding && !isTestOrScript) {
-    global.whatsappWatchdog = setInterval(() => {
-        const stuckConnecting = state.sock && state.status === 'connecting'
-            && state.connectingSince !== null
-            && Date.now() - state.connectingSince > CONNECT_TIMEOUT_MS;
+  global.whatsappWatchdog = setInterval(() => {
+    const s = getOrCreateTenantState(DEFAULT_TENANT_ID);
+    const stuckConnecting = s.sock && s.status === 'connecting'
+      && s.connectingSince !== null
+      && Date.now() - s.connectingSince > CONNECT_TIMEOUT_MS;
 
-        if (stuckConnecting) {
-            // init()'s own CONNECT_TIMEOUT_MS timer should already have torn this
-            // down; this is the fallback in case that timer was itself lost (e.g.
-            // dev-mode hot reload). Force it closed via end() so it goes through
-            // the normal connection.update('close') cleanup + reconnect path.
-            console.warn('WATCHDOG: Connection stale in "connecting" state, forcing teardown...');
-            state.sock!.end(new Error('Watchdog: stale connecting state'));
-            return;
-        }
+    if (stuckConnecting) {
+      console.warn('WATCHDOG: Default tenant connection stale in "connecting" state, forcing teardown...');
+      s.sock!.end(new Error('Watchdog: stale connecting state'));
+      return;
+    }
 
-        if (!state.sock || state.status !== 'connected') {
-            console.warn('WATCHDOG: Socket not connected, attempting re-init...');
-            init().catch(err => console.error('WATCHDOG: Re-init failed', err));
-        }
-    }, 30_000);
+    if (!s.sock || s.status !== 'connected') {
+      console.warn('WATCHDOG: Socket not connected for default tenant, attempting re-init...');
+      initTenant(DEFAULT_TENANT_ID).catch(err => console.error('WATCHDOG: Re-init failed', err));
+    }
+  }, 30_000);
 }
 
-// Trigger initial connection on first import (runtime only, skipped during build/tests)
-if (state.status === 'disconnected' && !state.sock && !isBuilding && !isTestOrScript) {
-    console.log('AUTO_INIT: No active socket, starting initial WhatsApp connect...');
-    init().catch(err => console.error('AUTO_INIT failed:', err));
+// Trigger initial connection on first import for default workspace
+if (defaultState.status === 'disconnected' && !defaultState.sock && !isBuilding && !isTestOrScript) {
+  console.log('AUTO_INIT: Starting initial WhatsApp connect for default workspace...');
+  initTenant(DEFAULT_TENANT_ID).catch(err => console.error('AUTO_INIT failed:', err));
+}
+
+/**
+ * Returns tenant-isolated client state for a workspace.
+ */
+export async function getTenantClientState(tenantId: string = DEFAULT_TENANT_ID): Promise<WhatsAppClientState> {
+  const memState = global.whatsappTenantStates?.get(tenantId);
+  if (memState && (memState.status === 'connected' || memState.qr || (memState.status === 'connecting' && memState.connectingSince))) {
+    return {
+      status: memState.status,
+      qr: memState.qr,
+      account: memState.account,
+      lastDisconnect: memState.status === 'connected' ? null : memState.lastDisconnect,
+      connectingSince: memState.connectingSince,
+      sock: null,
+      initializing: memState.initializing,
+      reconnectAttempts: memState.reconnectAttempts,
+    };
+  }
+
+  // Fallback to querying channels table for this tenant
+  try {
+    const admin = getSupabaseAdmin();
+    const { data: channel } = await admin
+      .from('channels')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .eq('type', 'whatsapp')
+      .maybeSingle();
+
+    if (channel && channel.status === 'connected') {
+      const meta = (channel.metadata as Record<string, any>) || {};
+      return {
+        status: 'connected',
+        qr: null,
+        account: meta.account || { id: channel.external_account_id || '', name: channel.display_name || 'WhatsApp' },
+        lastDisconnect: null,
+        connectingSince: null,
+        sock: null,
+        initializing: false,
+        reconnectAttempts: 0,
+      };
+    }
+  } catch (err) {
+    console.error(`[STATUS] Error querying channel state for tenant ${tenantId}:`, err);
+  }
+
+  return {
+    status: memState?.status || 'disconnected',
+    qr: memState?.qr || null,
+    account: memState?.account || null,
+    lastDisconnect: memState?.lastDisconnect || null,
+    connectingSince: memState?.connectingSince || null,
+    sock: null,
+    initializing: memState?.initializing || false,
+    reconnectAttempts: memState?.reconnectAttempts || 0,
+  };
 }
 
 export function getClientState() {
   return {
-    status: state.status,
-    qr: state.qr,
-    account: state.account,
-    lastDisconnect: state.status === 'connected' ? null : state.lastDisconnect,
-    connectingSince: state.connectingSince,
+    status: defaultState.status,
+    qr: defaultState.qr,
+    account: defaultState.account,
+    lastDisconnect: defaultState.status === 'connected' ? null : defaultState.lastDisconnect,
+    connectingSince: defaultState.connectingSince,
   };
 }
 
+export async function sendMessageForTenant(tenantId: string = DEFAULT_TENANT_ID, to: string, text: string) {
+  const tenantState = getOrCreateTenantState(tenantId);
+  if (!tenantState.sock || tenantState.status !== 'connected') {
+    throw new Error(`WhatsApp client not connected for workspace ${tenantId}.`);
+  }
+  const sendResult = await tenantState.sock.sendMessage(to, { text });
+  const result = (Array.isArray(sendResult) ? sendResult[0] : sendResult) as any;
+
+  const message: Message = {
+    id: result.key.id!,
+    chatId: to,
+    fromMe: true,
+    text: text,
+    timestamp: Date.now(),
+    senderName: 'Me',
+    mediaType: 'text',
+  };
+
+  await db.addMessage(message);
+  const existingConvo = await db.getConversation(to);
+  const updates: any = {
+    lastMessage: { text: message.text, timestamp: message.timestamp },
+    unreadCount: 0,
+  };
+  if (existingConvo && !existingConvo.firstResponseTimeMs && existingConvo.lastMessage?.timestamp) {
+    updates.firstResponseTimeMs = Math.max(0, Date.now() - existingConvo.lastMessage.timestamp);
+  }
+  await db.updateConversation(to, updates);
+  await db.incrementStat('sent');
+
+  return result;
+}
+
 export async function sendMessage(to: string, text: string) {
-    if (!state.sock || state.status !== 'connected') {
-        throw new Error('WhatsApp client not connected.');
-    }
-    const sendResult = await state.sock.sendMessage(to, { text });
-    // Baileys types changed: sendMessage may return object or array
-    const result = (Array.isArray(sendResult) ? sendResult[0] : sendResult) as any;
-    
-    const message: Message = {
-        id: result.key.id!,
-        chatId: to,
-        fromMe: true,
-        text: text,
-        timestamp: Date.now(),
-        senderName: 'Me',
-        mediaType: 'text',
-    };
+  return sendMessageForTenant(DEFAULT_TENANT_ID, to, text);
+}
 
-    await db.addMessage(message);
-    const existingConvo = await db.getConversation(to);
-    const updates: any = {
-      lastMessage: { text: message.text, timestamp: message.timestamp },
-      unreadCount: 0,
-    };
-    if (existingConvo && !existingConvo.firstResponseTimeMs && existingConvo.lastMessage?.timestamp) {
-      updates.firstResponseTimeMs = Math.max(0, Date.now() - existingConvo.lastMessage.timestamp);
-    }
-    await db.updateConversation(to, updates);
-    await db.incrementStat('sent');
+export async function sendVoiceNoteForTenant(tenantId: string = DEFAULT_TENANT_ID, to: string, audioBuffer: Buffer, transcriptText?: string) {
+  const tenantState = getOrCreateTenantState(tenantId);
+  if (!tenantState.sock || tenantState.status !== 'connected') {
+    throw new Error(`WhatsApp client not connected for workspace ${tenantId}.`);
+  }
+  const sendResult = await tenantState.sock.sendMessage(to, {
+    audio: audioBuffer,
+    mimetype: 'audio/mp4',
+    ptt: true,
+  });
+  const result = (Array.isArray(sendResult) ? sendResult[0] : sendResult) as any;
 
-    return result;
+  const message: Message = {
+    id: result.key.id!,
+    chatId: to,
+    fromMe: true,
+    text: transcriptText ? `[Voice Note]: ${transcriptText}` : '[Voice Note]',
+    timestamp: Date.now(),
+    senderName: 'Me',
+    mediaType: 'audio',
+  };
+
+  await db.addMessage(message);
+  const existingConvo = await db.getConversation(to);
+  const updates: any = {
+    lastMessage: { text: message.text, timestamp: message.timestamp },
+    unreadCount: 0,
+  };
+  if (existingConvo && !existingConvo.firstResponseTimeMs && existingConvo.lastMessage?.timestamp) {
+    updates.firstResponseTimeMs = Math.max(0, Date.now() - existingConvo.lastMessage.timestamp);
+  }
+  await db.updateConversation(to, updates);
+  await db.incrementStat('sent');
+
+  return result;
 }
 
 export async function sendVoiceNote(to: string, audioBuffer: Buffer, transcriptText?: string) {
-    if (!state.sock || state.status !== 'connected') {
-        throw new Error('WhatsApp client not connected.');
-    }
-    const sendResult = await state.sock.sendMessage(to, {
-        audio: audioBuffer,
-        mimetype: 'audio/mp4',
-        ptt: true,
-    });
-    const result = (Array.isArray(sendResult) ? sendResult[0] : sendResult) as any;
-
-    const message: Message = {
-        id: result.key.id!,
-        chatId: to,
-        fromMe: true,
-        text: transcriptText ? `[Voice Note]: ${transcriptText}` : '[Voice Note]',
-        timestamp: Date.now(),
-        senderName: 'Me',
-        mediaType: 'audio',
-    };
-
-    await db.addMessage(message);
-    const existingConvo = await db.getConversation(to);
-    const updates: any = {
-      lastMessage: { text: message.text, timestamp: message.timestamp },
-      unreadCount: 0,
-    };
-    if (existingConvo && !existingConvo.firstResponseTimeMs && existingConvo.lastMessage?.timestamp) {
-      updates.firstResponseTimeMs = Math.max(0, Date.now() - existingConvo.lastMessage.timestamp);
-    }
-    await db.updateConversation(to, updates);
-    await db.incrementStat('sent');
-
-    return result;
+  return sendVoiceNoteForTenant(DEFAULT_TENANT_ID, to, audioBuffer, transcriptText);
 }
-

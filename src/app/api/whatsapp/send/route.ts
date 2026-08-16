@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sendMessage } from '@/lib/whatsapp-client';
+import { sendMessageForTenant } from '@/lib/whatsapp-client';
 import { updateConversation } from '@/lib/db';
 import { isCurrentReplicaLeader, enqueueOutboundMessage, verifyActiveLeadership } from '@/lib/whatsapp-leader';
 import { withApiAuth } from '@/lib/api-guard';
@@ -13,6 +13,7 @@ export const POST = withApiAuth(
       if (!to || !text) {
         return NextResponse.json({ success: false, message: 'Missing "to" or "text" field' }, { status: 400 });
       }
+      const tenantId = ctx.tenantId || process.env.DEFAULT_TENANT_ID || '00000000-0000-0000-0000-000000000001';
 
       // Atomically engage human takeover so bot does not race with manual operator responses
       await updateConversation(to, {
@@ -23,7 +24,7 @@ export const POST = withApiAuth(
 
       let result: any;
       if (isCurrentReplicaLeader() && (await verifyActiveLeadership())) {
-        result = await sendMessage(to, text);
+        result = await sendMessageForTenant(tenantId, to, text);
       } else {
         result = await enqueueOutboundMessage(to, text);
       }
