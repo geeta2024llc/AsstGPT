@@ -19,7 +19,8 @@
     "test:synonyms": "tsx tests/suites/synonyms.test.ts",
     "db:migrate": "tsx scripts/db/apply_migrations.ts",
     "db:seed": "tsx scripts/db/seed_db.ts",
-    "db:check": "tsx scripts/db/check_db.ts"
+    "db:check": "tsx scripts/db/check_db.ts",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@genkit-ai/googleai": "^1.13.0",

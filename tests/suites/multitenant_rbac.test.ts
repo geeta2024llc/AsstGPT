@@ -5,6 +5,7 @@ import { runWithRequestContext } from '../../src/lib/request-context';
 import { withApiAuth } from '../../src/lib/api-guard';
 
 export async function runMultiTenantRBACTestSuite(): Promise<boolean> {
+  process.env.AUTH_REQUIRED = 'true';
   console.log('============================================================');
   console.log('  MULTI-TENANT ISOLATION & RBAC TEST SUITE');
   console.log('============================================================\n');

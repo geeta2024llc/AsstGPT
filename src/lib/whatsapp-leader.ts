@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from './supabase';
-import { init, sendMessage, WhatsAppClientState } from './whatsapp-client';
+import { init, sendMessage, WhatsAppClientState, getClientState } from './whatsapp-client';
 
 const REPLICA_ID =
   process.env.RAILWAY_REPLICA_ID ||
@@ -150,7 +150,7 @@ export async function claimOrRenewLeadership(channelId = 'default'): Promise<boo
  */
 export async function mirrorConnectionStateToDb(channelId = 'default'): Promise<void> {
   try {
-    const state: WhatsAppClientState = global.whatsappState;
+    const state = getClientState();
     if (!state) return;
 
     const supabase = getSupabaseAdmin();

@@ -7,9 +7,9 @@ export const dynamic = 'force-dynamic';
 
 export const GET = withApiAuth(
   async (_req: NextRequest) => {
-    if (isCurrentReplicaLeader()) {
-      const state = getClientState();
-      return NextResponse.json(state);
+    const localState = getClientState();
+    if (isCurrentReplicaLeader() || localState.status === 'connected' || localState.qr || (localState.status === 'connecting' && localState.connectingSince)) {
+      return NextResponse.json(localState);
     }
 
     const mirrored = await getMirroredConnectionState();
@@ -24,7 +24,7 @@ export const GET = withApiAuth(
       });
     }
 
-    return NextResponse.json(getClientState());
+    return NextResponse.json(localState);
   },
   { allowPublic: true, roles: ['admin', 'operator'] }
 );

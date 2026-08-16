@@ -135,7 +135,7 @@ export async function processProactiveReEngagements(
       // are already served straight from the DB by the widget, so no dispatch is needed there)
       if (!convo.id.endsWith('@webchat')) {
         try {
-          await enqueueOutboundMessage(convo.id, messageText);
+          await enqueueOutboundMessage(convo.id, messageText, 1500);
         } catch (dispatchErr: any) {
           console.error(`Failed to dispatch re-engagement follow-up to ${convo.id}:`, dispatchErr);
         }

@@ -105,7 +105,7 @@ export async function runHandoffSummaryAndReEngagementTests(): Promise<boolean> 
     // Test 4: Stale Conversation Detection & Proactive Follow-Up Dispatch
     // -------------------------------------------------------------
     console.log('4. Testing Stale Conversation Detection & Follow-Up Dispatch...');
-    const staleChatId = `test_stale_${Date.now()}@s.whatsapp.net`;
+    const staleChatId = `test_stale_${Date.now()}@webchat`;
 
     // Seed a message 5 hours ago (threshold is 2 hours)
     await addMessage({

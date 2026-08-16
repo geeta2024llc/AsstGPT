@@ -193,7 +193,7 @@ export default function WhatsAppConnectPanel() {
           </>
         )}
 
-        {state.lastDisconnect && !showError && (
+        {state.lastDisconnect && !showError && state.status !== 'connected' && (
           <div className="w-full rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
             <p>
               <strong>Last Disconnection:</strong> {format(new Date(state.lastDisconnect.date), 'PPp')}

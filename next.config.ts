@@ -9,6 +9,9 @@ import type {NextConfig} from 'next';
 // `.next/standalone` directly.
 const isVercelBuild = !!process.env.VERCEL;
 
+process.env.WS_NO_BUFFER_UTIL = '1';
+process.env.WS_NO_UTF_8_VALIDATE = '1';
+
 // Safe build-time diagnostic: confirms whether the backend proxy target is
 // configured, without ever printing its value.
 console.log(`[next.config] NEXT_PUBLIC_API_BASE_URL present at build: ${!!process.env.NEXT_PUBLIC_API_BASE_URL}`);
@@ -23,8 +26,6 @@ const nextConfig: NextConfig = {
     'mammoth',
     'jimp',
     'ws',
-    'bufferutil',
-    'utf-8-validate',
     '@hapi/boom',
     'pg',
   ],

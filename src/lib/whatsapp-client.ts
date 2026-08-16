@@ -1,4 +1,7 @@
 
+process.env.WS_NO_BUFFER_UTIL = '1';
+process.env.WS_NO_UTF_8_VALIDATE = '1';
+
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
@@ -101,6 +104,12 @@ const state = global.whatsappState;
 const inFlightMessageIds = new Set<string>();
 const chatMessageQueues = new Map<string, Promise<void>>();
 const consecutiveFallbacksMap = new Map<string, number>();
+
+function syncMirror() {
+  import('./whatsapp-leader').then(({ mirrorConnectionStateToDb }) => {
+    mirrorConnectionStateToDb().catch(() => {});
+  }).catch(() => {});
+}
 
 export function enqueueChatProcessing(chatId: string, task: () => Promise<void>): Promise<void> {
   const currentQueue = chatMessageQueues.get(chatId) || Promise.resolve();
@@ -775,6 +784,8 @@ export async function logout() {
   state.status = 'disconnected';
   state.qr = null;
   state.account = null;
+  state.lastDisconnect = null;
+  syncMirror();
   console.log('LOGOUT: In-memory state has been reset.');
 }
 
@@ -803,6 +814,7 @@ export async function init() {
   console.log('INIT: Starting connection process...');
   state.status = 'connecting';
   state.connectingSince = Date.now();
+  syncMirror();
 
   try {
     // 1. Verify filesystem write permissions and heal any corrupt 0-byte credentials
@@ -877,6 +889,7 @@ export async function init() {
       // told apart from our own synthetic connect-timeout teardown (which
       // surfaces as a plain Error with no statusCode, i.e. disconnectStatusCode: null).
       const disconnectErr = lastDisconnect?.error as (Boom | Error | undefined);
+      console.log('DISCONNECT_FULL_ERROR:', disconnectErr?.name, disconnectErr?.message, disconnectErr?.stack);
       const disconnectStatusCode = (disconnectErr as Boom | undefined)?.output?.statusCode ?? null;
       const selfInflicted = disconnectErr?.message === 'Connect timeout: no open/close event received'
         || disconnectErr?.message === 'Watchdog: stale connecting state';
@@ -893,10 +906,12 @@ export async function init() {
 
       if (newQr) {
           state.qr = await qr.toDataURL(newQr);
+          state.lastDisconnect = null;
           if (state.status !== 'connected') {
               // Only go to connecting if we aren't already connected
               state.status = 'connecting';
           }
+          syncMirror();
           // A QR was successfully issued, proving the socket is alive (not a
           // zombie handshake). Re-arm the teardown timer from this point so the
           // user gets a full CONNECT_TIMEOUT_MS window to scan it, instead of
@@ -912,9 +927,11 @@ export async function init() {
           state.reconnectAttempts = 0;
           state.status = 'connected';
           state.qr = null;
+          state.lastDisconnect = null;
           state.connectingSince = null;
           state.account = { id: sock.user!.id, name: sock.user!.name || 'N/A' };
           console.log('CONN_UPDATE: Connection opened successfully.');
+          syncMirror();
       }
 
       if (connection === 'close') {
@@ -941,6 +958,7 @@ export async function init() {
               state.status = 'connecting';
               state.sock = null;
               state.account = null;
+              syncMirror();
               // Exponential backoff with jitter
               setTimeout(() => {
                   init().catch((err) => console.error('Re-init failed:', err));
@@ -955,6 +973,7 @@ export async function init() {
               state.sock = null;
               state.account = null;
               state.connectingSince = null;
+              syncMirror();
           }
       }
     });
@@ -969,8 +988,13 @@ export async function init() {
 
 // ----------------- Graceful Process Shutdown & Lifecycle -----------------
 const isBuilding = process.env.NEXT_PHASE === 'phase-production-build';
+const isTestOrScript = typeof process !== 'undefined' && (
+  process.env.NODE_ENV === 'test' ||
+  process.env.DISABLE_WHATSAPP_AUTO_INIT === '1' ||
+  (Array.isArray(process.argv) && process.argv.some(arg => arg.includes('test') || arg.includes('seed_db') || arg.includes('migrate') || arg.includes('check_db')))
+);
 
-if (typeof process !== 'undefined' && !isBuilding) {
+if (typeof process !== 'undefined' && !isBuilding && !isTestOrScript) {
     const handleGracefulShutdown = async (signal: string) => {
         console.log(`[SHUTDOWN] Received ${signal}. Closing WhatsApp socket cleanly...`);
         if (state.sock) {
@@ -987,7 +1011,7 @@ if (typeof process !== 'undefined' && !isBuilding) {
 
 // ----------------- Watchdog & Auto-Init -----------------
 
-if (!global.whatsappWatchdog && !isBuilding) {
+if (!global.whatsappWatchdog && !isBuilding && !isTestOrScript) {
     global.whatsappWatchdog = setInterval(() => {
         const stuckConnecting = state.sock && state.status === 'connecting'
             && state.connectingSince !== null
@@ -1010,8 +1034,8 @@ if (!global.whatsappWatchdog && !isBuilding) {
     }, 30_000);
 }
 
-// Trigger initial connection on first import (runtime only, skipped during build)
-if (state.status === 'disconnected' && !state.sock && !isBuilding) {
+// Trigger initial connection on first import (runtime only, skipped during build/tests)
+if (state.status === 'disconnected' && !state.sock && !isBuilding && !isTestOrScript) {
     console.log('AUTO_INIT: No active socket, starting initial WhatsApp connect...');
     init().catch(err => console.error('AUTO_INIT failed:', err));
 }
@@ -1021,7 +1045,7 @@ export function getClientState() {
     status: state.status,
     qr: state.qr,
     account: state.account,
-    lastDisconnect: state.lastDisconnect,
+    lastDisconnect: state.status === 'connected' ? null : state.lastDisconnect,
     connectingSince: state.connectingSince,
   };
 }
