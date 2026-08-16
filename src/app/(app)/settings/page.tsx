@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import {
@@ -44,7 +44,7 @@ import ReEngagementManager from '@/components/re-engagement-manager';
 import ContactDedupManager from '@/components/contact-dedup-manager';
 import ChannelsIntegrationCard from '@/components/channels-integration-card';
 
-export default function SettingsPage() {
+function SettingsContent() {
   const searchParams = useSearchParams();
   const initialTab = searchParams.get('tab') || 'workspace';
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -249,5 +249,13 @@ export default function SettingsPage() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-sm text-muted-foreground">Loading Settings...</div>}>
+      <SettingsContent />
+    </Suspense>
   );
 }
