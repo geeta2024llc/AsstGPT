@@ -15,6 +15,17 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import {
   Table,
   TableBody,
   TableCell,
@@ -22,6 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useToast } from '@/hooks/use-toast';
 import {
   ChartContainer,
   ChartTooltip,
@@ -73,6 +85,7 @@ import {
   Gauge,
   Sliders,
   BookOpen,
+  RotateCcw,
 } from 'lucide-react';
 import type { AnalyticsData, LogEntry, SLAMetrics } from '@/types';
 import { formatDistanceToNow, format } from 'date-fns';
@@ -136,6 +149,8 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [isResettingData, setIsResettingData] = useState(false);
+  const { toast } = useToast();
 
   const fetchWhatsAppStatus = async () => {
     try {
@@ -203,6 +218,30 @@ export default function DashboardPage() {
     if (newRange === range) return;
     setRange(newRange);
     setIsLoading(true);
+  };
+
+  const handleResetData = async () => {
+    setIsResettingData(true);
+    try {
+      const res = await fetch('/api/analytics/reset', { method: 'POST' });
+      if (!res.ok) throw new Error(`Reset failed (HTTP ${res.status})`);
+
+      toast({
+        title: 'Dashboard Reset',
+        description: 'Analytics have been cleared. Your WhatsApp conversations and messages are safe and unaffected.',
+      });
+
+      await Promise.all([fetchAnalytics(range, true), fetchSlaMetrics()]);
+    } catch (error) {
+      console.error('Failed to reset dashboard analytics:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Reset Failed',
+        description: (error as Error).message || 'Could not reset dashboard analytics.',
+      });
+    } finally {
+      setIsResettingData(false);
+    }
   };
 
   const renderStatusBadge = () => {
@@ -369,6 +408,39 @@ export default function DashboardPage() {
           >
             <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
           </Button>
+
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isResettingData}
+                className="cursor-pointer text-muted-foreground hover:text-destructive"
+              >
+                {isResettingData ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                )}
+                Reset Data
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset dashboard analytics?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This clears every metric on this page — conversations, messages, SLA, sentiment,
+                  and charts — back to zero and starts fresh from this moment. Your actual WhatsApp
+                  conversations, messages, and contacts are <strong>not deleted</strong> and remain
+                  fully visible in Inbox and Client Details. This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>No, keep data</AlertDialogCancel>
+                <AlertDialogAction onClick={handleResetData}>Yes, reset dashboard</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
 

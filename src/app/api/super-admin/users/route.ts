@@ -105,6 +105,10 @@ export const GET = withPlatformAdminAuth(async (req: NextRequest) => {
       u.user_metadata?.role ||
       'member';
 
+    const expiresAt = u.app_metadata?.expires_at || u.user_metadata?.expires_at || null;
+    const isExpired = expiresAt ? new Date(expiresAt) <= new Date() : false;
+    const hasActiveBan = !!(u as any).banned_until && new Date((u as any).banned_until) > new Date();
+
     return {
       id: u.id,
       email: u.email,
@@ -112,7 +116,9 @@ export const GET = withPlatformAdminAuth(async (req: NextRequest) => {
       createdAt: u.created_at,
       lastSignInAt: u.last_sign_in_at,
       bannedUntil: (u as any).banned_until || null,
-      isBanned: !!(u as any).banned_until && new Date((u as any).banned_until) > new Date(),
+      expiresAt,
+      isExpired,
+      isBanned: hasActiveBan || isExpired,
       primaryRole,
       memberships: userMemberships,
     };

@@ -2666,6 +2666,38 @@ export async function recordWebhookDelivery(
   }
 }
 
+// --- Dashboard Analytics Reset Checkpoint ---
+
+// Reading/writing a single per-tenant "reset" timestamp lets an admin zero
+// out the dashboard without deleting real conversation/message/audit_log
+// history that Inbox, Client Details, and Activity still depend on.
+export async function getAnalyticsResetAt(tenantId: string): Promise<string | null> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data } = await supabase
+      .from('tenants')
+      .select('analytics_reset_at')
+      .eq('id', tenantId)
+      .maybeSingle();
+    return (data as { analytics_reset_at: string | null } | null)?.analytics_reset_at || null;
+  } catch (err) {
+    console.error('Error in getAnalyticsResetAt:', err);
+    return null;
+  }
+}
+
+export async function resetAnalyticsBaseline(tenantId: string): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from('tenants')
+    .update({ analytics_reset_at: new Date().toISOString() })
+    .eq('id', tenantId);
+
+  if (error) {
+    throw new Error(`Failed to reset analytics baseline: ${error.message}`);
+  }
+}
+
 // --- SLA & Agent Performance Metrics ---
 
 const SLA_METRICS_LOOKBACK_DAYS = 90;
@@ -2679,12 +2711,14 @@ export async function getSLAMetrics(): Promise<SLAMetrics> {
     // scan instead of fetching a tenant's entire conversation history on
     // every dashboard load.
     const lookbackSince = new Date(Date.now() - SLA_METRICS_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    const resetAt = await getAnalyticsResetAt(tenantId);
+    const effectiveSince = resetAt && resetAt > lookbackSince ? resetAt : lookbackSince;
 
     const { data: convos, error } = await supabase
       .from('conversations')
       .select('assigned_user_id, status, sentiment, first_response_time_ms, resolution_duration_ms')
       .eq('tenant_id', tenantId)
-      .gte('created_at', lookbackSince);
+      .gte('created_at', effectiveSince);
 
     const teamMembers = await getTeamMembers();
     const teamMemberMap = new Map<string, TeamMember>();

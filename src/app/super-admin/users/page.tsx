@@ -46,6 +46,10 @@ import {
   Eye,
   EyeOff,
   Sparkles,
+  CalendarClock,
+  Clock,
+  Calendar,
+  AlertTriangle,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import ConfirmDeleteDialog from '@/components/confirm-delete-dialog';
@@ -65,6 +69,8 @@ interface PlatformUser {
   lastSignInAt?: string;
   isBanned: boolean;
   bannedUntil?: string | null;
+  expiresAt?: string | null;
+  isExpired?: boolean;
   primaryRole: string;
   memberships: Membership[];
 }
@@ -120,6 +126,80 @@ export default function UsersManagementPage() {
   // Delete state
   const [deleteConfirmEmail, setDeleteConfirmEmail] = useState('');
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+
+  // Expiry state
+  const [expiryDialogOpen, setExpiryDialogOpen] = useState(false);
+  const [userForExpiry, setUserForExpiry] = useState<PlatformUser | null>(null);
+  const [customExpiryDate, setCustomExpiryDate] = useState('');
+  const [expirySubmitting, setExpirySubmitting] = useState(false);
+
+  const openExpiryDialog = (user: PlatformUser) => {
+    setUserForExpiry(user);
+    if (user.expiresAt) {
+      const d = new Date(user.expiresAt);
+      const isoLocal = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16);
+      setCustomExpiryDate(isoLocal);
+    } else {
+      // Default custom input to 30 days from now
+      const d = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      const isoLocal = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16);
+      setCustomExpiryDate(isoLocal);
+    }
+    setExpiryDialogOpen(true);
+  };
+
+  const handleApplyPreset = (days: number) => {
+    const targetDate = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    const isoLocal = new Date(targetDate.getTime() - targetDate.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+    setCustomExpiryDate(isoLocal);
+  };
+
+  const handleSaveExpiry = async (overrideExpiresAt?: string | null) => {
+    if (!userForExpiry) return;
+    setExpirySubmitting(true);
+    try {
+      const expiresAtValue = overrideExpiresAt !== undefined
+        ? overrideExpiresAt
+        : (customExpiryDate ? new Date(customExpiryDate).toISOString() : null);
+
+      const res = await fetch(`/api/super-admin/users/${userForExpiry.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'set_expiry',
+          expiresAt: expiresAtValue,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to update expiry date');
+      }
+
+      await fetchUsers();
+      toast({
+        title: expiresAtValue ? 'Account Expiry Updated' : 'Expiry Timer Removed',
+        description: expiresAtValue
+          ? `Account for ${userForExpiry.email} will expire on ${new Date(expiresAtValue).toLocaleString()}`
+          : `Permanent access restored for ${userForExpiry.email}`,
+      });
+      setExpiryDialogOpen(false);
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: err.message || 'Failed to save expiry settings',
+      });
+    } finally {
+      setExpirySubmitting(false);
+    }
+  };
 
   const { toast } = useToast();
 
@@ -569,20 +649,46 @@ export default function UsersManagementPage() {
                           </Badge>
                         </TableCell>
 
-                        {/* Status (Active / Disabled) */}
+                        {/* Status (Active / Expired / Disabled) */}
                         <TableCell>
-                          {u.isBanned ? (
-                            <Badge variant="destructive" className="gap-1 font-semibold text-xs">
-                              <Ban className="h-3 w-3" /> Disabled
-                            </Badge>
-                          ) : (
-                            <Badge
-                              variant="secondary"
-                              className="gap-1 font-semibold text-xs bg-emerald-500/15 text-emerald-400 border-emerald-500/20"
-                            >
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Active
-                            </Badge>
-                          )}
+                          <div className="flex flex-col gap-1 items-start">
+                            {u.isExpired ? (
+                              <Badge variant="destructive" className="gap-1 font-semibold text-xs bg-rose-500/15 text-rose-300 border-rose-500/30">
+                                <Clock className="h-3 w-3" /> Expired & Disabled
+                              </Badge>
+                            ) : u.isBanned ? (
+                              <Badge variant="destructive" className="gap-1 font-semibold text-xs bg-rose-500/15 text-rose-400 border-rose-500/30">
+                                <Ban className="h-3 w-3" /> Disabled
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="secondary"
+                                className="gap-1 font-semibold text-xs bg-emerald-500/15 text-emerald-400 border-emerald-500/20"
+                              >
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Active
+                              </Badge>
+                            )}
+
+                            {/* Active Expiry Countdown Pill */}
+                            {!u.isExpired && u.expiresAt && (
+                              <Badge
+                                variant="outline"
+                                className="gap-1 text-[10px] px-1.5 py-0 font-medium bg-amber-500/10 text-amber-300 border-amber-500/30"
+                                title={`Expires at ${new Date(u.expiresAt).toLocaleString()}`}
+                              >
+                                <CalendarClock className="h-2.5 w-2.5 text-amber-400" />
+                                {(() => {
+                                  const diffMs = new Date(u.expiresAt).getTime() - Date.now();
+                                  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+                                  const diffHours = Math.ceil(diffMs / (1000 * 60 * 60));
+                                  if (diffDays > 30) return `Exp: ${new Date(u.expiresAt).toLocaleDateString()}`;
+                                  if (diffDays > 1) return `Exp in ${diffDays}d`;
+                                  if (diffHours > 0) return `Exp in ${diffHours}h`;
+                                  return 'Expiring soon';
+                                })()}
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
 
                         {/* Last Sign-in */}
@@ -598,6 +704,18 @@ export default function UsersManagementPage() {
                         {/* Action Buttons */}
                         <TableCell className="text-right pr-6">
                           <div className="flex items-center justify-end gap-1.5">
+                            {/* Fast Expiry Timer Button */}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openExpiryDialog(u)}
+                              className="h-8 px-2.5 text-xs gap-1.5 cursor-pointer text-teal-400 hover:text-teal-300 hover:bg-teal-500/10 border-teal-500/30"
+                              title="Set Account Expiry Timer"
+                            >
+                              <CalendarClock className="h-3.5 w-3.5" />
+                              <span className="hidden sm:inline">Expiry</span>
+                            </Button>
+
                             {/* Fast Enable / Disable Toggle */}
                             <Button
                               size="sm"
@@ -615,7 +733,7 @@ export default function UsersManagementPage() {
                               <span>{u.isBanned ? 'Enable' : 'Disable'}</span>
                             </Button>
 
-                            {/* Dropdown Menu for Edit & Delete */}
+                            {/* Dropdown Menu for Edit, Expiry & Delete */}
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="sm" className="h-8 w-8 p-0 cursor-pointer">
@@ -624,6 +742,10 @@ export default function UsersManagementPage() {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-48">
                                 <DropdownMenuLabel className="text-xs">Manage Admin</DropdownMenuLabel>
+                                <DropdownMenuItem onClick={() => openExpiryDialog(u)} className="gap-2 cursor-pointer">
+                                  <CalendarClock className="h-3.5 w-3.5 text-teal-400" />
+                                  <span>Set Expiry Timer</span>
+                                </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleOpenEdit(u)} className="gap-2 cursor-pointer">
                                   <Edit2 className="h-3.5 w-3.5 text-sky-400" />
                                   <span>Edit Admin Details</span>
@@ -963,6 +1085,162 @@ export default function UsersManagementPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ========================================================================= */}
+      {/* 4. SET EXPIRY DATE DIALOG                                                */}
+      {/* ========================================================================= */}
+      <Dialog open={expiryDialogOpen} onOpenChange={setExpiryDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <CalendarClock className="h-5 w-5 text-teal-400" />
+              Manage Account Expiry Timer
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Configure an automatic expiration timer for <span className="font-semibold text-foreground">{userForExpiry?.email}</span>. When the expiry date is reached, this account is automatically disabled.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Current Status Banner */}
+            <div className="p-3 bg-muted/40 border border-border/70 rounded-xl text-xs flex items-center justify-between">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-muted-foreground font-medium">Current Expiry Status:</span>
+                <span className="font-semibold text-foreground">
+                  {userForExpiry?.isExpired ? (
+                    <span className="text-rose-400 flex items-center gap-1">
+                      <Clock className="h-3.5 w-3.5" /> Expired & Disabled
+                    </span>
+                  ) : userForExpiry?.expiresAt ? (
+                    <span className="text-amber-300 flex items-center gap-1">
+                      <CalendarClock className="h-3.5 w-3.5" /> Expires on {new Date(userForExpiry.expiresAt).toLocaleString()}
+                    </span>
+                  ) : (
+                    <span className="text-emerald-400 flex items-center gap-1">
+                      <ShieldCheck className="h-3.5 w-3.5" /> Permanent Access (No Expiry)
+                    </span>
+                  )}
+                </span>
+              </div>
+              {userForExpiry?.expiresAt && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={expirySubmitting}
+                  onClick={() => handleSaveExpiry(null)}
+                  className="h-7 text-xs text-muted-foreground hover:text-rose-400 cursor-pointer"
+                >
+                  Remove Expiry
+                </Button>
+              )}
+            </div>
+
+            {/* Quick 1-Click Presets */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-2">
+                Quick Expiry Presets
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleApplyPreset(30)}
+                  className="h-9 text-xs font-semibold text-teal-300 bg-teal-500/10 border-teal-500/30 hover:bg-teal-500/20 hover:border-teal-500/50 cursor-pointer col-span-3 sm:col-span-1"
+                >
+                  <Calendar className="h-3.5 w-3.5 mr-1" />
+                  1 Month (+30d)
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleApplyPreset(7)}
+                  className="h-9 text-xs border-border/80 hover:bg-muted cursor-pointer"
+                >
+                  7 Days
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleApplyPreset(90)}
+                  className="h-9 text-xs border-border/80 hover:bg-muted cursor-pointer"
+                >
+                  3 Months
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleApplyPreset(180)}
+                  className="h-9 text-xs border-border/80 hover:bg-muted cursor-pointer"
+                >
+                  6 Months
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleApplyPreset(365)}
+                  className="h-9 text-xs border-border/80 hover:bg-muted cursor-pointer"
+                >
+                  1 Year
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleSaveExpiry(null)}
+                  className="h-9 text-xs border-rose-500/30 text-rose-400 hover:bg-rose-500/10 cursor-pointer"
+                >
+                  Clear (Never)
+                </Button>
+              </div>
+            </div>
+
+            {/* Custom Expiration Date & Time Picker */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Custom Expiration Date & Time
+              </label>
+              <Input
+                type="datetime-local"
+                value={customExpiryDate}
+                onChange={(e) => setCustomExpiryDate(e.target.value)}
+                className="text-xs bg-muted/20 border-border/80"
+              />
+              {customExpiryDate && (
+                <p className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-1">
+                  <CalendarClock className="h-3 w-3 text-teal-400" />
+                  Target: {new Date(customExpiryDate).toLocaleString()}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="pt-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setExpiryDialogOpen(false)}
+              disabled={expirySubmitting}
+              className="cursor-pointer text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => handleSaveExpiry()}
+              disabled={expirySubmitting || !customExpiryDate}
+              className="bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold gap-2 cursor-pointer text-xs"
+            >
+              {expirySubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CalendarClock className="h-3.5 w-3.5" />}
+              Save Expiry Timer
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

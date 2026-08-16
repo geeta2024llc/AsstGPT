@@ -79,6 +79,7 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
   const redirectTo = searchParams.get('redirectTo') || '/inbox';
   const isUnassigned = searchParams.get('unassigned') === '1';
   const isSuspended = searchParams.get('suspended') === '1';
+  const isExpired = searchParams.get('expired') === '1';
   const urlMessage = searchParams.get('message');
   const urlMode = searchParams.get('mode');
 
@@ -93,7 +94,9 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
   const [rememberMe, setRememberMe] = useState(true);
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(
-    isSuspended
+    isExpired
+      ? 'Your account access has expired and been disabled. Please contact your platform administrator.'
+      : isSuspended
       ? 'This workspace has been suspended. Please contact platform support.'
       : isUnassigned
       ? 'Your account is not assigned to any workspace yet. Please create a workspace or ask an administrator to invite you.'

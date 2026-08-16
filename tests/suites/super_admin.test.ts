@@ -224,6 +224,93 @@ export async function runSuperAdminTestSuite(): Promise<boolean> {
       }
     }
 
+    // 3c. Account Expiry Timer & Auto-Disable Lifecycle
+    console.log('\n3c. Testing Account Expiry Timer & Auto-Disable lifecycle (1-Month, Custom Date, Auto-Disable, Clear Expiry)...');
+    let expiryUserId: string | null = null;
+    const EXPIRY_TEST_EMAIL = `expiry_test_${Date.now()}@test.com`;
+
+    try {
+      // Create test user for expiry test
+      const { data: createdExpUser, error: createExpErr } = await sb.auth.admin.createUser({
+        email: EXPIRY_TEST_EMAIL,
+        password: 'Password123!',
+        email_confirm: true,
+        user_metadata: { full_name: 'Expiry Test User' },
+        app_metadata: { tenant_id: TEST_TENANT_ID, role: 'admin' },
+      });
+      if (createExpErr || !createdExpUser?.user) throw createExpErr || new Error('Failed to create expiry test user');
+      expiryUserId = createdExpUser.user.id;
+
+      // 1. Set 1-Month Expiry (+30 days)
+      const oneMonthFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const set1MonthReq = makeRequest(`http://localhost:3000/api/super-admin/users/${expiryUserId}`, {
+        method: 'PATCH',
+        headers: { 'x-user-id': TEST_ADMIN_USER_ID, 'x-user-email': TEST_ADMIN_EMAIL, 'Content-Type': 'application/json' },
+        body: {
+          action: 'set_expiry',
+          expiresAt: oneMonthFromNow,
+        },
+      });
+      const set1MonthRes = await userPatch(set1MonthReq, { params: Promise.resolve({ id: expiryUserId }) } as any);
+      const set1MonthJson = await set1MonthRes.json();
+      const oneMonthSuccess = set1MonthRes.status === 200 && set1MonthJson.expiresAt === oneMonthFromNow && set1MonthJson.isExpired === false;
+      console.log(`   - SuperAdmin sets 1-month expiry timer: ${oneMonthSuccess ? '✅ PASS' : '❌ FAIL'}`);
+      if (!oneMonthSuccess) allPassed = false;
+
+      // Verify in user listing GET
+      const listReq = makeRequest(`http://localhost:3000/api/super-admin/users?q=${encodeURIComponent(EXPIRY_TEST_EMAIL)}`, {
+        headers: { 'x-user-id': TEST_ADMIN_USER_ID, 'x-user-email': TEST_ADMIN_EMAIL },
+      });
+      const listRes = await usersListGet(listReq);
+      const listJson = await listRes.json();
+      const listedUser = listJson.users?.find((u: any) => u.id === expiryUserId);
+      const listMatches = listedUser?.expiresAt === oneMonthFromNow && listedUser?.isExpired === false && listedUser?.isBanned === false;
+      console.log(`   - Active expiry countdown reflected in user list: ${listMatches ? '✅ PASS' : '❌ FAIL'}`);
+      if (!listMatches) allPassed = false;
+
+      // 2. Set Past Expiry Date (Simulate timer expiration -> immediate auto-disable)
+      const pastDate = new Date(Date.now() - 1000 * 60 * 60).toISOString(); // 1 hour ago
+      const setExpiredReq = makeRequest(`http://localhost:3000/api/super-admin/users/${expiryUserId}`, {
+        method: 'PATCH',
+        headers: { 'x-user-id': TEST_ADMIN_USER_ID, 'x-user-email': TEST_ADMIN_EMAIL, 'Content-Type': 'application/json' },
+        body: {
+          action: 'set_expiry',
+          expiresAt: pastDate,
+        },
+      });
+      const setExpiredRes = await userPatch(setExpiredReq, { params: Promise.resolve({ id: expiryUserId }) } as any);
+      const setExpiredJson = await setExpiredRes.json();
+      const expiredAutoDisabled = setExpiredRes.status === 200 && setExpiredJson.isExpired === true && setExpiredJson.isBanned === true;
+      console.log(`   - Expired timer automatically disables account: ${expiredAutoDisabled ? '✅ PASS' : '❌ FAIL'}`);
+      if (!expiredAutoDisabled) allPassed = false;
+
+      // 3. Clear Expiry Date (Restore permanent lifetime access)
+      const clearExpiryReq = makeRequest(`http://localhost:3000/api/super-admin/users/${expiryUserId}`, {
+        method: 'PATCH',
+        headers: { 'x-user-id': TEST_ADMIN_USER_ID, 'x-user-email': TEST_ADMIN_EMAIL, 'Content-Type': 'application/json' },
+        body: {
+          action: 'set_expiry',
+          expiresAt: null,
+        },
+      });
+      const clearExpiryRes = await userPatch(clearExpiryReq, { params: Promise.resolve({ id: expiryUserId }) } as any);
+      const clearExpiryJson = await clearExpiryRes.json();
+      const clearExpirySuccess = clearExpiryRes.status === 200 && clearExpiryJson.expiresAt === null && clearExpiryJson.isExpired === false;
+      console.log(`   - Clearing expiry restores active permanent access: ${clearExpirySuccess ? '✅ PASS' : '❌ FAIL'}`);
+      if (!clearExpirySuccess) allPassed = false;
+
+      // Clean up
+      await sb.auth.admin.deleteUser(expiryUserId).catch(() => {});
+      expiryUserId = null;
+    } catch (err) {
+      console.error('   - Expiry lifecycle test error:', err);
+      allPassed = false;
+    } finally {
+      if (expiryUserId) {
+        await sb.auth.admin.deleteUser(expiryUserId).catch(() => {});
+      }
+    }
+
     // 4. Tenant suspend/reactivate via check_tenant_active RPC.
     console.log('\n4. Testing tenant suspend/reactivate + check_tenant_active RPC...');
     try {

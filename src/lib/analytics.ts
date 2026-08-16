@@ -4,7 +4,7 @@ if (typeof window !== 'undefined') {
 
 import { getSupabaseAdmin } from './supabase';
 import { getRequestContext } from './request-context';
-import { ensureDefaultTenantAndChannel } from './db';
+import { ensureDefaultTenantAndChannel, getAnalyticsResetAt } from './db';
 import type { 
   AnalyticsData, 
   TimeSeriesDataPoint, 
@@ -65,7 +65,12 @@ export async function getAnalyticsData(
   if (range === '30d') days = 30;
 
   const startDate = subDays(startOfDay(now), days - 1);
-  const startDateIso = startDate.toISOString();
+  const rangeStartDateIso = startDate.toISOString();
+
+  // If an admin reset the dashboard, don't count anything before that
+  // checkpoint -- even if it falls inside the selected date range.
+  const resetAt = await getAnalyticsResetAt(tenantId);
+  const startDateIso = resetAt && resetAt > rangeStartDateIso ? resetAt : rangeStartDateIso;
 
   // Execute high-performance tenant-isolated queries in parallel with date bounding
   const [

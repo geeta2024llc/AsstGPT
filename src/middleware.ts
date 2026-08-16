@@ -105,6 +105,25 @@ export async function middleware(request: NextRequest) {
               user.app_metadata?.role ||
               user.user_metadata?.role ||
               'operator';
+
+            // Check if user account has reached its expiry date or is banned
+            const expiresAt = user.app_metadata?.expires_at || user.user_metadata?.expires_at;
+            const isExpired = expiresAt && new Date(expiresAt) <= new Date();
+            const isBanned = !!user.banned_until && new Date(user.banned_until) > new Date();
+
+            if (isExpired || isBanned) {
+              if (pathname.startsWith('/api/')) {
+                return NextResponse.json(
+                  { error: isExpired ? 'Account access has expired. Please contact a platform administrator.' : 'Account disabled by administrator.' },
+                  { status: 401 }
+                );
+              }
+              const expiredUrl = new URL('/login', request.url);
+              expiredUrl.searchParams.set('expired', '1');
+              const response = NextResponse.redirect(expiredUrl);
+              response.cookies.set('sb-access-token', '', { maxAge: 0, path: '/' });
+              return response;
+            }
           }
         }
       } catch (_) {

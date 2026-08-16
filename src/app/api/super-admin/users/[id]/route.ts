@@ -41,7 +41,87 @@ export const PATCH = withPlatformAdminAuth<RouteContext>(async (req, ctx, routeC
     });
   }
 
-  // 2. Handle Update (role, password, email, organization, full name)
+  // 2. Handle Set Expiry Date / Timer
+  if (action === 'set_expiry') {
+    const { expiresAt } = body; // ISO date string or null to remove
+
+    const { data: existingUser, error: fetchErr } = await admin.auth.admin.getUserById(id);
+    if (fetchErr || !existingUser?.user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    const currentAppMeta = existingUser.user.app_metadata || {};
+    const currentUserMeta = existingUser.user.user_metadata || {};
+
+    let banDuration = 'none';
+    let isExpired = false;
+
+    if (expiresAt) {
+      const expDate = new Date(expiresAt);
+      if (isNaN(expDate.getTime())) {
+        return NextResponse.json({ error: 'Invalid expiry date format' }, { status: 400 });
+      }
+
+      const diffMs = expDate.getTime() - Date.now();
+      if (diffMs <= 0) {
+        // Expiry date is in the past -> immediately disable/ban account
+        banDuration = '876000h';
+        isExpired = true;
+      } else {
+        // Expiry date is in the future -> account remains active until target date
+        banDuration = 'none';
+        isExpired = false;
+      }
+    } else {
+      // Removing expiry -> permanent active access
+      banDuration = 'none';
+      isExpired = false;
+    }
+
+    const authUpdates: any = {
+      ban_duration: banDuration,
+      app_metadata: {
+        ...currentAppMeta,
+        expires_at: expiresAt || null,
+      },
+      user_metadata: {
+        ...currentUserMeta,
+        expires_at: expiresAt || null,
+      },
+    };
+
+    const { data: updatedAuth, error: updateErr } = await admin.auth.admin.updateUserById(id, authUpdates);
+    if (updateErr) {
+      return NextResponse.json({ error: updateErr.message }, { status: 400 });
+    }
+
+    await logPlatformAction({
+      actorUserId: ctx.userId,
+      actorEmail: ctx.email,
+      action: 'user.set_expiry',
+      targetType: 'user',
+      targetId: id,
+      tenantId: currentAppMeta.tenant_id,
+      ip: ctx.ip,
+      metadata: {
+        targetEmail: updatedAuth.user.email,
+        expiresAt: expiresAt || null,
+        isExpired,
+        banDuration,
+      },
+    });
+
+    return NextResponse.json({
+      id: updatedAuth.user.id,
+      email: updatedAuth.user.email,
+      expiresAt: expiresAt || null,
+      bannedUntil: (updatedAuth.user as any).banned_until || null,
+      isExpired,
+      isBanned: isExpired || (!!(updatedAuth.user as any).banned_until && new Date((updatedAuth.user as any).banned_until) > new Date()),
+    });
+  }
+
+  // 3. Handle Update (role, password, email, organization, full name)
   if (action === 'update') {
     const { email, password, fullName, role, tenantId } = body;
 
@@ -127,7 +207,7 @@ export const PATCH = withPlatformAdminAuth<RouteContext>(async (req, ctx, routeC
     });
   }
 
-  return NextResponse.json({ error: 'Invalid action. Must be "ban", "unban", or "update"' }, { status: 400 });
+  return NextResponse.json({ error: 'Invalid action. Must be "ban", "unban", "set_expiry", or "update"' }, { status: 400 });
 }, { roles: ['super_admin'] });
 
 export const DELETE = withPlatformAdminAuth<RouteContext>(async (_req, ctx, routeContext) => {
