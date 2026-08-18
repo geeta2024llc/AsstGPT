@@ -89,24 +89,24 @@ export default function InviteAcceptPage() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#0a0f1d] text-slate-100 flex items-center justify-center p-4 relative overflow-hidden font-sans selection:bg-emerald-500/30">
+    <div className="min-h-screen w-full bg-[#181a1d] text-zinc-100 flex items-center justify-center p-4 relative overflow-hidden font-sans selection:bg-emerald-500/30">
       <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] rounded-full bg-emerald-500/10 blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full bg-blue-600/10 blur-[140px] pointer-events-none" />
+      <div className="absolute bottom-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full bg-emerald-600/5 blur-[140px] pointer-events-none" />
 
       <div className="w-full max-w-md z-10">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 p-[1px] shadow-lg shadow-emerald-500/20 mb-4">
-            <div className="w-full h-full bg-[#0a0f1d] rounded-2xl flex items-center justify-center">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 shadow-lg shadow-emerald-500/15 mb-4">
+            <div className="w-full h-full rounded-2xl flex items-center justify-center">
               <Sparkles className="w-7 h-7 text-emerald-400" />
             </div>
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-white">You've Been Invited</h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm text-zinc-400 mt-1">
             {preview ? `Join ${preview.tenantName} on AsstGPT` : 'Checking your invitation...'}
           </p>
         </div>
 
-        <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-7 shadow-2xl shadow-black/60">
+        <div className="bg-[#222428]/90 backdrop-blur-xl border border-zinc-800/90 rounded-2xl p-7 shadow-2xl shadow-black/80">
           <div className="flex items-center gap-2 mb-6 text-xs uppercase tracking-wider font-semibold text-emerald-400">
             <ShieldCheck className="w-4 h-4" /> Workspace Invitation
           </div>
@@ -132,16 +132,16 @@ export default function InviteAcceptPage() {
             joining ? (
               <div className="flex flex-col items-center gap-3 py-10">
                 <Loader2 className="w-6 h-6 animate-spin text-emerald-400" />
-                <p className="text-sm text-slate-400">Joining {preview.tenantName}...</p>
+                <p className="text-sm text-zinc-400">Joining {preview.tenantName}...</p>
               </div>
             ) : (
               <div className="space-y-4 text-center py-2">
-                <p className="text-sm text-slate-300">
+                <p className="text-sm text-zinc-300">
                   <span className="font-medium text-white">{preview.email}</span> already has an account. Sign in to accept this invitation.
                 </p>
                 <button
                   onClick={() => router.push(`/login?redirectTo=${encodeURIComponent(`/invite/${token}`)}`)}
-                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-semibold text-sm transition-all shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold text-sm transition-all shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <span>Sign In to Accept</span>
                   <ArrowRight className="w-4 h-4" />
@@ -151,19 +151,19 @@ export default function InviteAcceptPage() {
           ) : (
             <form onSubmit={handleAccept} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">Email</label>
+                <label className="block text-xs font-medium text-zinc-300 mb-1.5">Email</label>
                 <input
                   type="email"
                   disabled
                   value={preview.email}
-                  className="w-full px-4 py-2.5 bg-slate-950/40 border border-slate-800 rounded-xl text-sm text-slate-400 cursor-not-allowed"
+                  className="w-full px-4 py-2.5 bg-zinc-950/40 border border-zinc-800 rounded-xl text-sm text-zinc-400 cursor-not-allowed"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">Your Full Name</label>
+                <label className="block text-xs font-medium text-zinc-300 mb-1.5">Your Full Name</label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500">
                     <User className="w-4 h-4" />
                   </div>
                   <input
@@ -172,15 +172,15 @@ export default function InviteAcceptPage() {
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     placeholder="Sarah Jenkins"
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-950/60 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
+                    className="w-full pl-10 pr-4 py-2.5 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">Set a Password</label>
+                <label className="block text-xs font-medium text-zinc-300 mb-1.5">Set a Password</label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500">
                     <Lock className="w-4 h-4" />
                   </div>
                   <input
@@ -190,12 +190,12 @@ export default function InviteAcceptPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Minimum 8 characters"
-                    className="w-full pl-10 pr-11 py-2.5 bg-slate-950/60 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
+                    className="w-full pl-10 pr-11 py-2.5 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 focus:outline-none transition-colors"
+                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-zinc-500 hover:text-zinc-300 focus:outline-none transition-colors"
                     title={showPassword ? 'Hide password' : 'Show password'}
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
@@ -207,10 +207,10 @@ export default function InviteAcceptPage() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full mt-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-semibold text-sm transition-all shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                className="w-full mt-2 py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold text-sm transition-all shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {submitting ? (
-                  <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <>
                     <span>Accept & Join {preview.tenantName}</span>

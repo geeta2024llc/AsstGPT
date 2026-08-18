@@ -63,13 +63,13 @@ function KnowledgeBaseContent() {
         </p>
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as 'memory' | 'personality')} className="space-y-6">
-        <TabsList className="bg-muted/70 p-1 border">
-          <TabsTrigger value="memory" className="gap-2 text-xs sm:text-sm font-medium">
-            <BookOpen className="h-4 w-4" /> AI Memory & FAQs
+      <Tabs value={tab} onValueChange={(v) => setTab(v as 'memory' | 'personality')} className="space-y-4 sm:space-y-6">
+        <TabsList className="grid grid-cols-2 w-full sm:w-auto sm:flex bg-muted/70 p-1 border rounded-xl">
+          <TabsTrigger value="memory" className="gap-1.5 text-xs sm:text-sm font-medium cursor-pointer">
+            <BookOpen className="h-4 w-4" /> <span className="truncate">Memory & FAQs</span>
           </TabsTrigger>
-          <TabsTrigger value="personality" className="gap-2 text-xs sm:text-sm font-medium">
-            <Bot className="h-4 w-4" /> AI Personality
+          <TabsTrigger value="personality" className="gap-1.5 text-xs sm:text-sm font-medium cursor-pointer">
+            <Bot className="h-4 w-4" /> <span className="truncate">AI Personality</span>
           </TabsTrigger>
         </TabsList>
 

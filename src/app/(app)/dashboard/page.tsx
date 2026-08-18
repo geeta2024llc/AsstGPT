@@ -358,179 +358,181 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* 1. TOP HEADER & RANGE CONTROLS */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-headline text-3xl font-bold tracking-tight flex items-center gap-2.5">
-            <Activity className="h-7 w-7 text-primary" /> AI Command Center & Analytics
+          <h1 className="font-headline text-2xl sm:text-3xl font-bold tracking-tight flex items-center gap-2">
+            <Activity className="h-6 w-6 sm:h-7 sm:w-7 text-primary shrink-0" /> AI Command Center & Analytics
           </h1>
-          <p className="text-muted-foreground text-sm">
+          <p className="text-muted-foreground text-xs sm:text-sm mt-0.5">
             Live WhatsApp telemetry, AI response velocity, customer sentiment, and operational performance.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border bg-muted/60 p-1 text-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="grid grid-cols-3 w-full sm:w-auto sm:flex rounded-lg border bg-muted/60 p-1 text-xs">
             <button
               onClick={() => handleRangeChange('today')}
-              className={`px-3 py-1.5 font-medium rounded-md transition-colors ${
-                range === 'today' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              className={`px-2.5 sm:px-3 py-1.5 font-medium rounded-md transition-colors text-center cursor-pointer ${
+                range === 'today' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               Today
             </button>
             <button
               onClick={() => handleRangeChange('7d')}
-              className={`px-3 py-1.5 font-medium rounded-md transition-colors ${
-                range === '7d' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              className={`px-2.5 sm:px-3 py-1.5 font-medium rounded-md transition-colors text-center cursor-pointer ${
+                range === '7d' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               7 Days
             </button>
             <button
               onClick={() => handleRangeChange('30d')}
-              className={`px-3 py-1.5 font-medium rounded-md transition-colors ${
-                range === '30d' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              className={`px-2.5 sm:px-3 py-1.5 font-medium rounded-md transition-colors text-center cursor-pointer ${
+                range === '30d' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               30 Days
             </button>
           </div>
 
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => {
-              fetchAnalytics(range, true);
-              fetchSlaMetrics();
-              fetchWhatsAppStatus();
-            }}
-            disabled={isRefreshing}
-            title="Refresh analytics data"
-            className="cursor-pointer"
-          >
-            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-          </Button>
+          <div className="flex items-center gap-2 ml-auto sm:ml-0">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => {
+                fetchAnalytics(range, true);
+                fetchSlaMetrics();
+                fetchWhatsAppStatus();
+              }}
+              disabled={isRefreshing}
+              title="Refresh analytics data"
+              className="cursor-pointer h-8 w-8 sm:h-9 sm:w-9"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </Button>
 
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={isResettingData}
-                className="cursor-pointer text-muted-foreground hover:text-destructive"
-              >
-                {isResettingData ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                )}
-                Reset Data
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Reset dashboard analytics?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This clears every metric on this page — conversations, messages, SLA, sentiment,
-                  and charts — back to zero and starts fresh from this moment. Your actual WhatsApp
-                  conversations, messages, and contacts are <strong>not deleted</strong> and remain
-                  fully visible in Inbox and Client Details. This action cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>No, keep data</AlertDialogCancel>
-                <AlertDialogAction onClick={handleResetData}>Yes, reset dashboard</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isResettingData}
+                  className="cursor-pointer text-muted-foreground hover:text-destructive h-8 sm:h-9 text-xs"
+                >
+                  {isResettingData ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  Reset Data
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Reset dashboard analytics?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This clears every metric on this page — conversations, messages, SLA, sentiment,
+                    and charts — back to zero and starts fresh from this moment. Your actual WhatsApp
+                    conversations, messages, and contacts are <strong>not deleted</strong> and remain
+                    fully visible in Inbox and Client Details. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>No, keep data</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleResetData}>Yes, reset dashboard</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
         </div>
       </div>
 
       {/* 2. 1-CLICK QUICK ACTION LAUNCHPAD */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3.5">
         <Link
           href="/inbox"
-          className="p-4 rounded-xl border border-primary/30 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent hover:border-primary transition-all flex items-center justify-between shadow-sm group cursor-pointer"
+          className="p-3 sm:p-4 rounded-xl border border-primary/30 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent hover:border-primary transition-all flex items-center justify-between shadow-xs group cursor-pointer"
         >
-          <div className="space-y-1">
-            <span className="text-xs font-semibold text-primary flex items-center gap-1.5">
-              <MessageSquare className="w-3.5 h-3.5" /> Customer Inbox
+          <div className="space-y-1 min-w-0">
+            <span className="text-xs font-semibold text-primary flex items-center gap-1.5 truncate">
+              <MessageSquare className="w-3.5 h-3.5 shrink-0" /> Customer Inbox
             </span>
-            <p className="text-sm font-bold text-foreground">
+            <p className="text-xs sm:text-sm font-bold text-foreground truncate">
               {analytics?.kpis.activeConversations || 0} Open Chats <ArrowRight className="inline w-3.5 h-3.5 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
             </p>
           </div>
-          <div className="p-2.5 rounded-lg bg-primary/20 text-primary group-hover:scale-105 transition-transform">
-            <MessageCircle className="w-5 h-5" />
+          <div className="p-2 sm:p-2.5 rounded-lg bg-primary/20 text-primary group-hover:scale-105 transition-transform shrink-0 ml-2">
+            <MessageCircle className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
         </Link>
 
         <Link
           href="/knowledge-base?tab=personality"
-          className="p-4 rounded-xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent hover:border-emerald-500 transition-all flex items-center justify-between shadow-sm group cursor-pointer"
+          className="p-3 sm:p-4 rounded-xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent hover:border-emerald-500 transition-all flex items-center justify-between shadow-xs group cursor-pointer"
         >
-          <div className="space-y-1">
-            <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" /> AI Personality & Prompts
+          <div className="space-y-1 min-w-0">
+            <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5 truncate">
+              <Sparkles className="w-3.5 h-3.5 shrink-0" /> AI Personality & Prompts
             </span>
-            <p className="text-sm font-bold text-foreground">
+            <p className="text-xs sm:text-sm font-bold text-foreground truncate">
               {analytics?.kpis.activeAgents || 1} Active Bot(s) <ArrowRight className="inline w-3.5 h-3.5 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
             </p>
           </div>
-          <div className="p-2.5 rounded-lg bg-emerald-500/20 text-emerald-400 group-hover:scale-105 transition-transform">
-            <Bot className="w-5 h-5" />
+          <div className="p-2 sm:p-2.5 rounded-lg bg-emerald-500/20 text-emerald-400 group-hover:scale-105 transition-transform shrink-0 ml-2">
+            <Bot className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
         </Link>
 
         <Link
           href="/knowledge-base"
-          className="p-4 rounded-xl border border-blue-500/30 bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent hover:border-blue-500 transition-all flex items-center justify-between shadow-sm group cursor-pointer"
+          className="p-3 sm:p-4 rounded-xl border border-blue-500/30 bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent hover:border-blue-500 transition-all flex items-center justify-between shadow-xs group cursor-pointer"
         >
-          <div className="space-y-1">
-            <span className="text-xs font-semibold text-blue-400 flex items-center gap-1.5">
-              <BookOpen className="w-3.5 h-3.5" /> AI Memory
+          <div className="space-y-1 min-w-0">
+            <span className="text-xs font-semibold text-blue-400 flex items-center gap-1.5 truncate">
+              <BookOpen className="w-3.5 h-3.5 shrink-0" /> AI Memory
             </span>
-            <p className="text-sm font-bold text-foreground">
+            <p className="text-xs sm:text-sm font-bold text-foreground truncate">
               {analytics?.ragAnalytics.sourcesUsed?.length || 0} Ingested Sources <ArrowRight className="inline w-3.5 h-3.5 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
             </p>
           </div>
-          <div className="p-2.5 rounded-lg bg-blue-500/20 text-blue-400 group-hover:scale-105 transition-transform">
-            <FileText className="w-5 h-5" />
+          <div className="p-2 sm:p-2.5 rounded-lg bg-blue-500/20 text-blue-400 group-hover:scale-105 transition-transform shrink-0 ml-2">
+            <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
         </Link>
 
         <Link
           href="/settings?tab=re-engage"
-          className="p-4 rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent hover:border-amber-500 transition-all flex items-center justify-between shadow-sm group cursor-pointer"
+          className="p-3 sm:p-4 rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent hover:border-amber-500 transition-all flex items-center justify-between shadow-xs group cursor-pointer"
         >
-          <div className="space-y-1">
-            <span className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">
-              <Sliders className="w-3.5 h-3.5" /> Auto Re-Engagement
+          <div className="space-y-1 min-w-0">
+            <span className="text-xs font-semibold text-amber-400 flex items-center gap-1.5 truncate">
+              <Sliders className="w-3.5 h-3.5 shrink-0" /> Auto Re-Engagement
             </span>
-            <p className="text-sm font-bold text-foreground">
+            <p className="text-xs sm:text-sm font-bold text-foreground truncate">
               Proactive Flows <ArrowRight className="inline w-3.5 h-3.5 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
             </p>
           </div>
-          <div className="p-2.5 rounded-lg bg-amber-500/20 text-amber-400 group-hover:scale-105 transition-transform">
-            <Zap className="w-5 h-5" />
+          <div className="p-2 sm:p-2.5 rounded-lg bg-amber-500/20 text-amber-400 group-hover:scale-105 transition-transform shrink-0 ml-2">
+            <Zap className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
         </Link>
       </div>
 
       {/* 3. CORE KPI CARDS GRID */}
-      <div className="grid gap-3.5 md:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3.5">
         {kpiCards.map((stat) => (
-          <Card key={stat.title} className="hover:border-primary/50 transition-colors bg-card/60">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1.5 pt-3.5 px-4">
-              <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <Card key={stat.title} className="hover:border-primary/50 transition-colors bg-card/60 shadow-2xs">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-2.5 px-3 sm:pt-3.5 sm:px-4">
+              <CardTitle className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground truncate mr-1">
                 {stat.title}
               </CardTitle>
-              <stat.icon className="h-4 w-4 text-muted-foreground" />
+              <stat.icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground shrink-0" />
             </CardHeader>
-            <CardContent className="px-4 pb-3.5">
-              <div className="text-2xl font-bold tracking-tight">{stat.value.toLocaleString()}</div>
-              <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{stat.desc}</p>
+            <CardContent className="px-3 pb-2.5 sm:px-4 sm:pb-3.5">
+              <div className="text-lg sm:text-2xl font-bold tracking-tight">{stat.value.toLocaleString()}</div>
+              <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-0.5 truncate">{stat.desc}</p>
             </CardContent>
           </Card>
         ))}
@@ -891,61 +893,63 @@ export default function DashboardPage() {
           <CardDescription>Individual agent volume, handoffs, and activity status</CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Agent Name</TableHead>
-                <TableHead>Mode</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Threads Handled</TableHead>
-                <TableHead className="text-right">AI Responses</TableHead>
-                <TableHead className="text-right">Failures</TableHead>
-                <TableHead className="text-right">Human Handoffs</TableHead>
-                <TableHead className="text-right">Last Activity</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {analytics?.agentPerformance && analytics.agentPerformance.length > 0 ? (
-                analytics.agentPerformance.map((ag) => (
-                  <TableRow key={ag.id}>
-                    <TableCell className="font-medium flex items-center gap-2">
-                      <Bot className="h-4 w-4 text-primary" />
-                      {ag.name}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="uppercase text-[10px]">
-                        {ag.mode}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        className={
-                          ag.status === 'active'
-                            ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
-                            : 'border-muted bg-muted text-muted-foreground'
-                        }
-                      >
-                        {ag.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right font-medium">{ag.conversationsHandled}</TableCell>
-                    <TableCell className="text-right font-medium">{ag.aiResponses}</TableCell>
-                    <TableCell className="text-right text-destructive font-medium">{ag.failures}</TableCell>
-                    <TableCell className="text-right font-medium">{ag.humanHandoffs}</TableCell>
-                    <TableCell className="text-right text-muted-foreground text-xs">
-                      {ag.lastActivity ? formatDistanceToNow(ag.lastActivity, { addSuffix: true }) : 'Never'}
+          <div className="overflow-x-auto custom-scrollbar">
+            <Table className="min-w-[650px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Agent Name</TableHead>
+                  <TableHead>Mode</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Threads Handled</TableHead>
+                  <TableHead className="text-right">AI Responses</TableHead>
+                  <TableHead className="text-right">Failures</TableHead>
+                  <TableHead className="text-right">Human Handoffs</TableHead>
+                  <TableHead className="text-right">Last Activity</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {analytics?.agentPerformance && analytics.agentPerformance.length > 0 ? (
+                  analytics.agentPerformance.map((ag) => (
+                    <TableRow key={ag.id}>
+                      <TableCell className="font-medium flex items-center gap-2">
+                        <Bot className="h-4 w-4 text-primary" />
+                        {ag.name}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="uppercase text-[10px]">
+                          {ag.mode}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          className={
+                            ag.status === 'active'
+                              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                              : 'border-muted bg-muted text-muted-foreground'
+                          }
+                        >
+                          {ag.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-medium">{ag.conversationsHandled}</TableCell>
+                      <TableCell className="text-right font-medium">{ag.aiResponses}</TableCell>
+                      <TableCell className="text-right text-destructive font-medium">{ag.failures}</TableCell>
+                      <TableCell className="text-right font-medium">{ag.humanHandoffs}</TableCell>
+                      <TableCell className="text-right text-muted-foreground text-xs">
+                        {ag.lastActivity ? formatDistanceToNow(ag.lastActivity, { addSuffix: true }) : 'Never'}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={8} className="h-20 text-center text-muted-foreground text-sm">
+                      No agents configured yet.
                     </TableCell>
                   </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={8} className="h-20 text-center text-muted-foreground text-sm">
-                    No agents configured yet.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -959,36 +963,38 @@ export default function DashboardPage() {
             <CardDescription>Latest system activity audit trail</CardDescription>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Action</TableHead>
-                  <TableHead className="hidden sm:table-cell">Details</TableHead>
-                  <TableHead className="text-right">Time</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {analytics?.errorAnalytics.recentErrors && analytics.errorAnalytics.recentErrors.length > 0 ? (
-                  analytics.errorAnalytics.recentErrors.map((log: LogEntry) => (
-                    <TableRow key={log.id}>
-                      <TableCell className="font-medium text-xs">{log.action}</TableCell>
-                      <TableCell className="hidden truncate text-xs text-muted-foreground max-w-[200px] sm:table-cell">
-                        {log.details}
-                      </TableCell>
-                      <TableCell className="text-right text-xs text-muted-foreground">
-                        {formatDistanceToNow(log.timestamp, { addSuffix: true })}
+            <div className="overflow-x-auto custom-scrollbar">
+              <Table className="min-w-[400px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Action</TableHead>
+                    <TableHead className="hidden sm:table-cell">Details</TableHead>
+                    <TableHead className="text-right">Time</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {analytics?.errorAnalytics.recentErrors && analytics.errorAnalytics.recentErrors.length > 0 ? (
+                    analytics.errorAnalytics.recentErrors.map((log: LogEntry) => (
+                      <TableRow key={log.id}>
+                        <TableCell className="font-medium text-xs">{log.action}</TableCell>
+                        <TableCell className="hidden truncate text-xs text-muted-foreground max-w-[200px] sm:table-cell">
+                          {log.details}
+                        </TableCell>
+                        <TableCell className="text-right text-xs text-muted-foreground">
+                          {formatDistanceToNow(log.timestamp, { addSuffix: true })}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={3} className="h-20 text-center text-xs text-muted-foreground">
+                        No errors logged recently. Everything is running smoothly!
                       </TableCell>
                     </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={3} className="h-20 text-center text-xs text-muted-foreground">
-                      No errors logged recently. Everything is running smoothly!
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
 

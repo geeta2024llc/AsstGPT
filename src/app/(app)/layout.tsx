@@ -27,6 +27,7 @@ import {
   BookMarked,
   History,
   QrCode,
+  CheckCircle2,
   LogOut,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -46,6 +47,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     email: '',
     avatar: '',
   });
+  const [waConnected, setWaConnected] = React.useState<boolean>(false);
 
   const loadWorkspace = React.useCallback(() => {
     fetch('/api/tenant')
@@ -61,8 +63,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       .catch(() => {});
   }, []);
 
+  const checkWhatsAppStatus = React.useCallback(() => {
+    fetch('/api/whatsapp/status', { cache: 'no-store' })
+      .then((res) => res.json())
+      .then((data) => {
+        setWaConnected(data?.status === 'connected');
+      })
+      .catch(() => {
+        setWaConnected(false);
+      });
+  }, []);
+
   React.useEffect(() => {
     loadWorkspace();
+    checkWhatsAppStatus();
 
     const handleWorkspaceUpdated = (e: any) => {
       if (e?.detail?.name) {
@@ -75,7 +89,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       }
     };
 
+    const handleWaStatus = (e: any) => {
+      if (e?.detail?.status) {
+        setWaConnected(e.detail.status === 'connected');
+      } else {
+        checkWhatsAppStatus();
+      }
+    };
+
     window.addEventListener('workspace-updated', handleWorkspaceUpdated);
+    window.addEventListener('whatsapp-status-changed', handleWaStatus);
+    const interval = setInterval(checkWhatsAppStatus, 10000);
 
     supabase.auth.getUser().then(({ data }) => {
       const authUser = data?.user;
@@ -91,8 +115,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     return () => {
       window.removeEventListener('workspace-updated', handleWorkspaceUpdated);
+      window.removeEventListener('whatsapp-status-changed', handleWaStatus);
+      clearInterval(interval);
     };
-  }, [loadWorkspace]);
+  }, [loadWorkspace, checkWhatsAppStatus]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -118,13 +144,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               className={`w-full justify-start gap-2.5 font-medium transition-all ${
                 pathname.startsWith('/whatsapp')
                   ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400 shadow-md shadow-emerald-500/25'
+                  : waConnected
+                  ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 border border-emerald-500/30'
                   : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30'
               } group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:h-9`}
               size="sm"
             >
-              <Link href="/whatsapp" title="Connect WhatsApp">
-                <QrCode className="h-4 w-4 shrink-0" />
-                <span className="group-data-[collapsible=icon]:hidden truncate">Connect</span>
+              <Link href="/whatsapp" title={waConnected ? 'WhatsApp Connected' : 'Connect WhatsApp'}>
+                {waConnected ? (
+                  <span className="relative flex h-3.5 w-3.5 items-center justify-center shrink-0">
+                    <span className="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 opacity-75"></span>
+                    <CheckCircle2 className={`h-3.5 w-3.5 relative ${pathname.startsWith('/whatsapp') ? 'text-slate-950' : 'text-emerald-400'}`} />
+                  </span>
+                ) : (
+                  <QrCode className="h-4 w-4 shrink-0" />
+                )}
+                <span className="group-data-[collapsible=icon]:hidden truncate">
+                  {waConnected ? 'Connected' : 'Connect'}
+                </span>
               </Link>
             </Button>
           </div>
@@ -242,18 +279,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </Sidebar>
       <SidebarInset>
         <ImpersonationBanner />
-        <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-sm md:px-6">
-          <SidebarTrigger />
+        <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b bg-background/80 px-3 sm:px-4 backdrop-blur-sm md:px-6">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <SidebarTrigger className="cursor-pointer" />
+            <div className="flex items-center gap-2 md:hidden">
+              <Bot className="size-5 text-primary shrink-0" />
+              <span className="font-headline font-semibold text-sm truncate">AsstGPT</span>
+            </div>
+          </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" asChild>
+            <Button variant="ghost" size="icon" asChild className="h-8 w-8 sm:h-9 sm:w-9">
               <Link href="/settings">
-                <Settings className="h-5 w-5" />
+                <Settings className="h-4 w-4 sm:h-5 sm:w-5" />
                 <span className="sr-only">Settings</span>
               </Link>
             </Button>
           </div>
         </header>
-        <main className="flex-1 p-4 md:p-6">{children}</main>
+        <main className={`flex-1 max-w-full overflow-x-hidden ${pathname.startsWith('/inbox') ? 'p-0 sm:p-2 md:p-4' : 'p-3 sm:p-4 md:p-6'}`}>{children}</main>
       </SidebarInset>
     </SidebarProvider>
   );

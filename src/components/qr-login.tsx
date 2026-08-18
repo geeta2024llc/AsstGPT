@@ -40,6 +40,10 @@ export default function QRLogin() {
       
       setStatus(data.status);
 
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('whatsapp-status-changed', { detail: data }));
+      }
+
       if (data.status === 'connected') {
         setMessage('Successfully connected! Redirecting to Dashboard...');
         stopPolling();
@@ -62,6 +66,9 @@ export default function QRLogin() {
       console.error('Failed to fetch WhatsApp status:', error);
       setStatus('error');
       setMessage('An error occurred while checking WhatsApp status.');
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('whatsapp-status-changed', { detail: { status: 'error' } }));
+      }
       return null;
     }
   }, [router, stopPolling]);

@@ -1370,12 +1370,12 @@ export default function InboxLayout() {
                 </div>
 
                 {/* Header Action Controls */}
-                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                <div className="flex items-center gap-1 sm:gap-2 shrink-0 ml-auto">
                   {/* Contact CRM Profile Drawer Button */}
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8 text-xs gap-1.5 px-2.5 rounded-lg cursor-pointer"
+                    className="h-8 text-xs gap-1 px-2 sm:px-2.5 rounded-lg cursor-pointer"
                     onClick={() => setIsProfileDrawerOpen(true)}
                     title="View & Edit Contact CRM Profile"
                   >
@@ -1388,7 +1388,7 @@ export default function InboxLayout() {
                     variant={isSelectedConvoResolved ? 'default' : 'outline'}
                     size="sm"
                     disabled={isResolving}
-                    className="h-8 text-xs gap-1.5 px-2.5 rounded-lg cursor-pointer"
+                    className="h-8 text-xs gap-1 px-2 sm:px-2.5 rounded-lg cursor-pointer"
                     onClick={() => handleToggleResolve(selectedConversation.id, !isSelectedConvoResolved)}
                   >
                     {isResolving ? (
@@ -1398,7 +1398,7 @@ export default function InboxLayout() {
                     ) : (
                       <CheckCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                     )}
-                    <span>{isSelectedConvoResolved ? 'Reopen' : 'Resolve'}</span>
+                    <span className="hidden xs:inline">{isSelectedConvoResolved ? 'Reopen' : 'Resolve'}</span>
                   </Button>
 
                   {/* Team Member Assignment Selector */}
@@ -1407,9 +1407,9 @@ export default function InboxLayout() {
                     value={selectedConversation.assignedUserId || 'unassigned'}
                     onValueChange={(val) => handleAssignTeamMember(selectedConversation.id, val)}
                   >
-                    <SelectTrigger className="h-8 text-xs w-[130px] sm:w-[150px] bg-background gap-1.5 px-2.5 cursor-pointer rounded-lg">
+                    <SelectTrigger className="h-8 text-xs w-[100px] sm:w-[140px] bg-background gap-1 px-2 sm:px-2.5 cursor-pointer rounded-lg">
                       <UserCheck className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      <SelectValue placeholder="Assign Agent">
+                      <SelectValue placeholder="Assign">
                         <span className="truncate text-xs">
                           {selectedConversation.assignedUserId && selectedConversation.assignedUserId !== 'unassigned'
                             ? (teamMembers.find(m => m.id === selectedConversation.assignedUserId)?.fullName || selectedConversation.assignedUser?.fullName || 'Assigned')
@@ -1430,7 +1430,7 @@ export default function InboxLayout() {
                   </Select>
 
                   {/* Manual Takeover Switch */}
-                  <div className="flex items-center gap-1.5 pl-1.5 border-l">
+                  <div className="flex items-center gap-1 sm:gap-1.5 pl-1 sm:pl-1.5 border-l">
                     <Switch
                       id="live-takeover-toggle"
                       checked={isSelectedConvoPaused}

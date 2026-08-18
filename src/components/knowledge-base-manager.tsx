@@ -54,7 +54,6 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import type { KnowledgeFile } from '@/types';
 import { Badge } from '@/components/ui/badge';
@@ -139,6 +138,8 @@ export default function KnowledgeBaseManager() {
   const [editModeRaw, setEditModeRaw] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const addScrollRef = useRef<HTMLDivElement>(null);
+  const editScrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   const fetchFiles = async () => {
@@ -227,6 +228,14 @@ export default function KnowledgeBaseManager() {
       ...prev,
       { id: String(Date.now()), question: '', answer: '' }
     ]);
+    setTimeout(() => {
+      if (addScrollRef.current) {
+        addScrollRef.current.scrollTo({
+          top: addScrollRef.current.scrollHeight,
+          behavior: 'smooth',
+        });
+      }
+    }, 60);
   };
 
   const handleUpdateNewFaqItem = (id: string, field: 'question' | 'answer', value: string) => {
@@ -306,6 +315,14 @@ export default function KnowledgeBaseManager() {
       ...prev,
       { id: String(Date.now()), question: '', answer: '' }
     ]);
+    setTimeout(() => {
+      if (editScrollRef.current) {
+        editScrollRef.current.scrollTo({
+          top: editScrollRef.current.scrollHeight,
+          behavior: 'smooth',
+        });
+      }
+    }, 60);
   };
 
   const handleRemoveEditFaqItem = (id: string) => {
@@ -442,25 +459,25 @@ export default function KnowledgeBaseManager() {
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Quick Ingestion — Choose How to Add Facts
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-3.5">
           {/* Card 1: Add FAQ */}
           <div
             onClick={openAddFaqModal}
-            className="p-4 rounded-xl border-2 border-dashed border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500 transition-all cursor-pointer flex flex-col justify-between gap-3 group shadow-sm"
+            className="p-3 sm:p-4 rounded-xl border-2 border-dashed border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500 transition-all cursor-pointer flex flex-col justify-between gap-2.5 sm:gap-3 group shadow-2xs"
           >
             <div className="flex items-start justify-between">
-              <div className="p-2.5 rounded-lg bg-emerald-500/20 text-emerald-400 group-hover:scale-110 transition-transform">
-                <MessageSquare className="w-5 h-5" />
+              <div className="p-2 sm:p-2.5 rounded-lg bg-emerald-500/20 text-emerald-400 group-hover:scale-110 transition-transform">
+                <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
               <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-300 border-emerald-500/30">
                 Recommended
               </Badge>
             </div>
             <div>
-              <h4 className="font-semibold text-sm text-foreground flex items-center gap-1.5">
+              <h4 className="font-semibold text-xs sm:text-sm text-foreground flex items-center gap-1.5">
                 Questions & Answers (FAQ) <ArrowRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity" />
               </h4>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1">
                 Add verified pricing, store hours, refund rules, and common questions.
               </p>
             </div>
@@ -469,21 +486,21 @@ export default function KnowledgeBaseManager() {
           {/* Card 2: Write / Paste Text */}
           <div
             onClick={openAddTextModal}
-            className="p-4 rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 hover:bg-primary/10 hover:border-primary transition-all cursor-pointer flex flex-col justify-between gap-3 group shadow-sm"
+            className="p-3 sm:p-4 rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 hover:bg-primary/10 hover:border-primary transition-all cursor-pointer flex flex-col justify-between gap-2.5 sm:gap-3 group shadow-2xs"
           >
             <div className="flex items-start justify-between">
-              <div className="p-2.5 rounded-lg bg-primary/20 text-primary group-hover:scale-110 transition-transform">
-                <FileText className="w-5 h-5" />
+              <div className="p-2 sm:p-2.5 rounded-lg bg-primary/20 text-primary group-hover:scale-110 transition-transform">
+                <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
               <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/30">
                 Freeform
               </Badge>
             </div>
             <div>
-              <h4 className="font-semibold text-sm text-foreground flex items-center gap-1.5">
+              <h4 className="font-semibold text-xs sm:text-sm text-foreground flex items-center gap-1.5">
                 Write / Paste Business Info <ArrowRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity" />
               </h4>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1">
                 Paste company policies, product descriptions, menu items, or notes.
               </p>
             </div>
@@ -492,21 +509,21 @@ export default function KnowledgeBaseManager() {
           {/* Card 3: Upload Document */}
           <div
             onClick={() => fileInputRef.current?.click()}
-            className="p-4 rounded-xl border-2 border-dashed border-blue-500/40 bg-blue-500/5 hover:bg-blue-500/10 hover:border-blue-500 transition-all cursor-pointer flex flex-col justify-between gap-3 group shadow-sm"
+            className="p-3 sm:p-4 rounded-xl border-2 border-dashed border-blue-500/40 bg-blue-500/5 hover:bg-blue-500/10 hover:border-blue-500 transition-all cursor-pointer flex flex-col justify-between gap-2.5 sm:gap-3 group shadow-2xs col-span-1 sm:col-span-2 md:col-span-1"
           >
             <div className="flex items-start justify-between">
-              <div className="p-2.5 rounded-lg bg-blue-500/20 text-blue-400 group-hover:scale-110 transition-transform">
-                {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
+              <div className="p-2 sm:p-2.5 rounded-lg bg-blue-500/20 text-blue-400 group-hover:scale-110 transition-transform">
+                {isUploading ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : <Upload className="w-4 h-4 sm:w-5 sm:h-5" />}
               </div>
               <Badge variant="outline" className="text-[10px] bg-blue-500/10 text-blue-300 border-blue-500/30">
                 PDF / DOCX / TXT
               </Badge>
             </div>
             <div>
-              <h4 className="font-semibold text-sm text-foreground flex items-center gap-1.5">
+              <h4 className="font-semibold text-xs sm:text-sm text-foreground flex items-center gap-1.5">
                 {isUploading ? 'Parsing Document...' : 'Upload Document'} <ArrowRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity" />
               </h4>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1">
                 Upload brochures, price catalogs, or product manuals up to 10MB.
               </p>
             </div>
@@ -523,90 +540,86 @@ export default function KnowledgeBaseManager() {
       </div>
 
       {/* 3. LIVE KNOWLEDGE SEARCH & TEST BAR */}
-      <Card className="border-border/80 bg-card/40 shadow-sm">
-        <CardHeader className="pb-3 pt-4">
+      <Card className="border-border/80 bg-card/40 shadow-xs">
+        <CardHeader className="pb-2.5 pt-3 sm:pb-3 sm:pt-4 px-3 sm:px-6">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <CardTitle className="text-xs sm:text-sm font-semibold flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-primary" /> Test Knowledge Retrieval (Live Simulation)
             </CardTitle>
-            <span className="text-[11px] text-muted-foreground">Test how the AI retrieves your answers</span>
+            <span className="text-[10px] sm:text-[11px] text-muted-foreground hidden xs:inline">Test how AI retrieves answers</span>
           </div>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Ask a customer question (e.g. 'What are your return policies?' or 'How much is the VIP room?')..."
-                value={testQuery}
-                onChange={(e) => setTestQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleRunLiveTest();
-                  }
-                }}
-                className="pl-9 text-xs bg-background"
-              />
+        <CardContent className="px-3 pb-3 sm:px-6 sm:pb-6">
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  value={testQuery}
+                  onChange={(e) => setTestQuery(e.target.value)}
+                  placeholder="e.g. What is your refund policy? What are your hours?"
+                  className="pl-9 h-9 text-xs sm:text-sm bg-background"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleRunLiveTest();
+                    }
+                  }}
+                />
+              </div>
+              <Button onClick={handleRunLiveTest} disabled={isTesting || !testQuery.trim()} size="sm" className="gap-1.5 h-9 shrink-0">
+                {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bot className="w-4 h-4" />}
+                <span className="hidden sm:inline">Simulate Query</span>
+                <span className="sm:hidden">Test</span>
+              </Button>
             </div>
-            <Button
-              size="sm"
-              onClick={handleRunLiveTest}
-              disabled={isTesting || !testQuery.trim()}
-              className="gap-1.5 shrink-0 cursor-pointer"
-            >
-              {isTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-              <span>Test Search</span>
-            </Button>
-          </div>
 
-          {/* Test Results Panel */}
-          {testResult && (
-            <div className="p-3.5 rounded-xl border border-primary/30 bg-primary/5 space-y-2.5 text-xs">
-              {testResult.error ? (
-                <div className="text-rose-400 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 shrink-0" />
-                  <span>{testResult.error}</span>
-                </div>
-              ) : (
-                <>
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-primary/20 pb-2">
-                    <span className="font-semibold text-foreground flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Grounded AI Answer:
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-muted-foreground">
-                        Matched {testResult.chunksMatched || 0} chunk(s) from:
-                      </span>
-                      {testResult.sourcesUsed && testResult.sourcesUsed.length > 0 ? (
-                        testResult.sourcesUsed.map((src) => (
-                          <Badge key={src} variant="outline" className="text-[10px] bg-background">
-                            {src}
-                          </Badge>
-                        ))
-                      ) : (
-                        <Badge variant="outline" className="text-[10px]">No specific source</Badge>
-                      )}
-                    </div>
+            {/* Test Result Box */}
+            {testResult && (
+              <div className="p-3 sm:p-4 rounded-xl border bg-slate-950/80 border-primary/30 space-y-2 text-xs">
+                {testResult.error ? (
+                  <div className="text-rose-400 flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>{testResult.error}</span>
                   </div>
-                  <p className="text-slate-200 leading-relaxed font-sans text-sm">{testResult.answer}</p>
-                </>
-              )}
-            </div>
-          )}
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] text-muted-foreground border-b border-border/40 pb-2">
+                      <span className="flex items-center gap-1 text-primary font-medium">
+                        <Sparkles className="w-3.5 h-3.5" /> Retrieved Response:
+                      </span>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className="text-muted-foreground">Sources:</span>
+                        {testResult.sourcesUsed && testResult.sourcesUsed.length > 0 ? (
+                          testResult.sourcesUsed.map((src: string) => (
+                            <Badge key={src} variant="outline" className="text-[10px] bg-background">
+                              {src}
+                            </Badge>
+                          ))
+                        ) : (
+                          <Badge variant="outline" className="text-[10px]">No specific source</Badge>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-slate-200 leading-relaxed font-sans text-xs sm:text-sm">{testResult.answer}</p>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
       {/* 4. MAIN KNOWLEDGE BROWSER WITH TABS & VIEW SWITCHER */}
-      <div className="space-y-4">
+      <div className="space-y-3 sm:space-y-4">
         {/* Category Tabs and Filter Controls */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3">
           <Tabs
             value={categoryTab}
             onValueChange={(v) => setCategoryTab(v as any)}
             className="w-full sm:w-auto"
           >
-            <TabsList className="grid grid-cols-4 sm:flex h-9 bg-muted/60 p-1">
+            <TabsList className="grid grid-cols-2 xs:grid-cols-4 sm:flex h-auto sm:h-9 bg-muted/60 p-1">
               <TabsTrigger value="all" className="text-xs">
                 All ({files.length})
               </TabsTrigger>
@@ -779,189 +792,189 @@ export default function KnowledgeBaseManager() {
         ) : (
           /* TABLE VIEW */
           <Card>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Source Title</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Size</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Added On</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredFiles.map((file) => (
-                  <TableRow key={file.id}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        {getFileTypeIcon(file.fileType)}
-                        <span className="truncate max-w-xs">{file.fileName}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-[10px] uppercase">
-                        {file.fileType}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {formatBytes(file.size || file.content.length)}
-                    </TableCell>
-                    <TableCell>{getStatusBadge(file.status, file.enabled)}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {format(new Date(file.createdAt), 'MMM d, yyyy')}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-primary"
-                          onClick={() => handleOpenEdit(file)}
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-destructive cursor-pointer"
-                          title="Delete source"
-                          onClick={() => setFileToDelete({ id: file.id, name: file.fileName })}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    </TableCell>
+            <div className="overflow-x-auto custom-scrollbar">
+              <Table className="min-w-[620px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Source Title</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Size</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Added On</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {filteredFiles.map((file) => (
+                    <TableRow key={file.id}>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {getFileTypeIcon(file.fileType)}
+                          <span className="truncate max-w-xs">{file.fileName}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-[10px] uppercase">
+                          {file.fileType}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {formatBytes(file.size || file.content.length)}
+                      </TableCell>
+                      <TableCell>{getStatusBadge(file.status, file.enabled)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {format(new Date(file.createdAt), 'MMM d, yyyy')}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-primary"
+                            onClick={() => handleOpenEdit(file)}
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive cursor-pointer"
+                            title="Delete source"
+                            onClick={() => setFileToDelete({ id: file.id, name: file.fileName })}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </Card>
         )}
       </div>
 
       {/* 5. ADD MANUAL FAQ / TEXT DIALOG */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[85vh] h-[85vh] flex flex-col p-0 gap-0 overflow-hidden sm:rounded-xl">
+          <DialogHeader className="p-5 pb-3 border-b border-border/50 shrink-0 bg-background/80 backdrop-blur-sm">
             <DialogTitle className="flex items-center gap-2">
               {newType === 'faq' ? <MessageSquare className="h-5 w-5 text-primary" /> : <FileText className="h-5 w-5 text-primary" />}
               {newType === 'faq' ? 'Add Questions & Answers (FAQ)' : 'Write / Paste Business Info'}
             </DialogTitle>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 pr-3 -mr-3 max-h-[70vh]">
-            <div className="space-y-4 py-2">
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground">Title / Topic</label>
-                <Input
-                  placeholder={newType === 'faq' ? 'e.g. Pricing & Hours FAQ' : 'e.g. Shipping Policies & Guarantee'}
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  className="mt-1"
+          <div ref={addScrollRef} className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4 custom-scrollbar">
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Title / Topic</label>
+              <Input
+                placeholder={newType === 'faq' ? 'e.g. Pricing & Hours FAQ' : 'e.g. Shipping Policies & Guarantee'}
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+
+            {/* Mode switch within modal */}
+            <div className="flex items-center gap-2 p-1 bg-muted/60 rounded-lg w-fit">
+              <Button
+                type="button"
+                size="sm"
+                variant={newType === 'faq' ? 'secondary' : 'ghost'}
+                className="h-7 text-xs"
+                onClick={() => setNewType('faq')}
+              >
+                <MessageSquare className="w-3.5 h-3.5 mr-1" /> Q&A Form
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={newType === 'txt' ? 'secondary' : 'ghost'}
+                className="h-7 text-xs"
+                onClick={() => setNewType('txt')}
+              >
+                <FileText className="w-3.5 h-3.5 mr-1" /> Freeform Text
+              </Button>
+            </div>
+
+            {newType === 'faq' ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-muted-foreground">
+                    Questions & Answers ({newFaqItems.length})
+                  </label>
+                </div>
+
+                <div className="space-y-3">
+                  {newFaqItems.map((item, index) => (
+                    <div
+                      key={item.id}
+                      className="p-3.5 rounded-lg border border-border bg-card/60 space-y-2.5 shadow-sm"
+                    >
+                      <div className="flex items-center justify-between">
+                        <Badge variant="outline" className="text-xs font-medium bg-muted/50">
+                          Q&A #{index + 1}
+                        </Badge>
+                        {newFaqItems.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive cursor-pointer"
+                            onClick={() => handleRemoveNewFaqItem(item.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+
+                      <div>
+                        <Input
+                          placeholder="Customer Question (e.g. What are your opening hours?)"
+                          value={item.question}
+                          onChange={(e) => handleUpdateNewFaqItem(item.id, 'question', e.target.value)}
+                          className="text-xs font-medium"
+                        />
+                      </div>
+
+                      <div>
+                        <Textarea
+                          placeholder="Verified Answer (e.g. We are open Monday to Friday from 9:00 AM to 6:00 PM)."
+                          value={item.answer}
+                          onChange={(e) => handleUpdateNewFaqItem(item.id, 'answer', e.target.value)}
+                          rows={2}
+                          className="text-xs leading-relaxed resize-y"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs gap-1.5 border-dashed cursor-pointer"
+                  onClick={handleAddNewFaqItem}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add Another Question
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-muted-foreground">Business Facts & Policy Content</label>
+                <Textarea
+                  placeholder="Write or paste your verified business facts, prices, contact numbers, and policies..."
+                  value={newContent}
+                  onChange={(e) => setNewContent(e.target.value)}
+                  className="h-56 font-mono text-xs leading-relaxed"
                 />
               </div>
+            )}
+          </div>
 
-              {/* Mode switch within modal */}
-              <div className="flex items-center gap-2 p-1 bg-muted/60 rounded-lg w-fit">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={newType === 'faq' ? 'secondary' : 'ghost'}
-                  className="h-7 text-xs"
-                  onClick={() => setNewType('faq')}
-                >
-                  <MessageSquare className="w-3.5 h-3.5 mr-1" /> Q&A Form
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={newType === 'txt' ? 'secondary' : 'ghost'}
-                  className="h-7 text-xs"
-                  onClick={() => setNewType('txt')}
-                >
-                  <FileText className="w-3.5 h-3.5 mr-1" /> Freeform Text
-                </Button>
-              </div>
-
-              {newType === 'faq' ? (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold text-muted-foreground">
-                      Questions & Answers ({newFaqItems.length})
-                    </label>
-                  </div>
-
-                  <div className="space-y-3">
-                    {newFaqItems.map((item, index) => (
-                      <div
-                        key={item.id}
-                        className="p-3.5 rounded-lg border border-border bg-card/60 space-y-2.5 shadow-sm"
-                      >
-                        <div className="flex items-center justify-between">
-                          <Badge variant="outline" className="text-xs font-medium bg-muted/50">
-                            Q&A #{index + 1}
-                          </Badge>
-                          {newFaqItems.length > 1 && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                              onClick={() => handleRemoveNewFaqItem(item.id)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                        </div>
-
-                        <div>
-                          <Input
-                            placeholder="Customer Question (e.g. What are your opening hours?)"
-                            value={item.question}
-                            onChange={(e) => handleUpdateNewFaqItem(item.id, 'question', e.target.value)}
-                            className="text-xs font-medium"
-                          />
-                        </div>
-
-                        <div>
-                          <Textarea
-                            placeholder="Verified Answer (e.g. We are open Monday to Friday from 9:00 AM to 6:00 PM)."
-                            value={item.answer}
-                            onChange={(e) => handleUpdateNewFaqItem(item.id, 'answer', e.target.value)}
-                            rows={2}
-                            className="text-xs leading-relaxed"
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full text-xs gap-1.5 border-dashed"
-                    onClick={handleAddNewFaqItem}
-                  >
-                    <Plus className="h-3.5 w-3.5" /> Add Another Question
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold text-muted-foreground">Business Facts & Policy Content</label>
-                  <Textarea
-                    placeholder="Write or paste your verified business facts, prices, contact numbers, and policies..."
-                    value={newContent}
-                    onChange={(e) => setNewContent(e.target.value)}
-                    className="h-56 font-mono text-xs leading-relaxed"
-                  />
-                </div>
-              )}
-            </div>
-          </ScrollArea>
-
-          <DialogFooter className="pt-3 border-t mt-2">
+          <DialogFooter className="p-4 px-6 border-t border-border/50 bg-card/50 shrink-0 flex items-center justify-end gap-2 mt-0">
             <Button variant="outline" onClick={() => setIsAddOpen(false)}>Cancel</Button>
             <Button onClick={handleAddManualKnowledge} disabled={isSubmitting}>
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Check className="w-4 h-4 mr-1" />}
@@ -973,120 +986,118 @@ export default function KnowledgeBaseManager() {
 
       {/* 6. EDIT KNOWLEDGE DIALOG */}
       <Dialog open={!!editingFile} onOpenChange={(open) => !open && setEditingFile(null)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[85vh] h-[85vh] flex flex-col p-0 gap-0 overflow-hidden sm:rounded-xl">
+          <DialogHeader className="p-5 pb-3 border-b border-border/50 shrink-0 bg-background/80 backdrop-blur-sm">
             <DialogTitle className="flex items-center gap-2">
               <Edit2 className="h-5 w-5 text-primary" /> Edit Knowledge Source
             </DialogTitle>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 pr-3 -mr-3 max-h-[70vh]">
-            <div className="space-y-4 py-2">
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground">Title</label>
-                <Input
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="mt-1"
-                />
-              </div>
+          <div ref={editScrollRef} className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4 custom-scrollbar">
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Title</label>
+              <Input
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                className="mt-1"
+              />
+            </div>
 
-              {/* Mode Toggle */}
-              {editType === 'faq' && (
-                <div className="flex items-center justify-between p-2 rounded-lg bg-muted/40 border">
-                  <span className="text-xs text-muted-foreground font-medium">Edit Mode</span>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={!editModeRaw ? 'secondary' : 'ghost'}
-                      className="h-7 text-xs"
-                      onClick={() => setEditModeRaw(false)}
-                    >
-                      Structured Q&A
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={editModeRaw ? 'secondary' : 'ghost'}
-                      className="h-7 text-xs"
-                      onClick={() => {
-                        setEditContent(formatFaqContent(editFaqItems));
-                        setEditModeRaw(true);
-                      }}
-                    >
-                      Raw Text
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {editType === 'faq' && !editModeRaw ? (
-                <div className="space-y-3">
-                  {editFaqItems.map((item, index) => (
-                    <div
-                      key={item.id}
-                      className="p-3.5 rounded-lg border border-border bg-card/60 space-y-2.5 shadow-sm"
-                    >
-                      <div className="flex items-center justify-between">
-                        <Badge variant="outline" className="text-xs font-medium bg-muted/50">
-                          Q&A #{index + 1}
-                        </Badge>
-                        {editFaqItems.length > 1 && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                            onClick={() => handleRemoveEditFaqItem(item.id)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </div>
-
-                      <Input
-                        value={item.question}
-                        onChange={(e) => handleUpdateEditFaqItem(item.id, 'question', e.target.value)}
-                        placeholder="Question"
-                        className="text-xs font-medium"
-                      />
-
-                      <Textarea
-                        value={item.answer}
-                        onChange={(e) => handleUpdateEditFaqItem(item.id, 'answer', e.target.value)}
-                        placeholder="Answer"
-                        rows={2}
-                        className="text-xs leading-relaxed"
-                      />
-                    </div>
-                  ))}
-
+            {/* Mode Toggle */}
+            {editType === 'faq' && (
+              <div className="flex items-center justify-between p-2 rounded-lg bg-muted/40 border">
+                <span className="text-xs text-muted-foreground font-medium">Edit Mode</span>
+                <div className="flex items-center gap-2">
                   <Button
                     type="button"
-                    variant="outline"
                     size="sm"
-                    className="w-full text-xs gap-1.5 border-dashed"
-                    onClick={handleAddEditFaqItem}
+                    variant={!editModeRaw ? 'secondary' : 'ghost'}
+                    className="h-7 text-xs"
+                    onClick={() => setEditModeRaw(false)}
                   >
-                    <Plus className="h-3.5 w-3.5" /> Add Another Question
+                    Structured Q&A
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={editModeRaw ? 'secondary' : 'ghost'}
+                    className="h-7 text-xs"
+                    onClick={() => {
+                      setEditContent(formatFaqContent(editFaqItems));
+                      setEditModeRaw(true);
+                    }}
+                  >
+                    Raw Text
                   </Button>
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold text-muted-foreground">Content</label>
-                  <Textarea
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    rows={12}
-                    className="font-mono text-xs leading-relaxed"
-                  />
-                </div>
-              )}
-            </div>
-          </ScrollArea>
+              </div>
+            )}
 
-          <DialogFooter className="pt-3 border-t mt-2">
+            {editType === 'faq' && !editModeRaw ? (
+              <div className="space-y-3">
+                {editFaqItems.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className="p-3.5 rounded-lg border border-border bg-card/60 space-y-2.5 shadow-sm"
+                  >
+                    <div className="flex items-center justify-between">
+                      <Badge variant="outline" className="text-xs font-medium bg-muted/50">
+                        Q&A #{index + 1}
+                      </Badge>
+                      {editFaqItems.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive cursor-pointer"
+                          onClick={() => handleRemoveEditFaqItem(item.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+
+                    <Input
+                      value={item.question}
+                      onChange={(e) => handleUpdateEditFaqItem(item.id, 'question', e.target.value)}
+                      placeholder="Question"
+                      className="text-xs font-medium"
+                    />
+
+                    <Textarea
+                      value={item.answer}
+                      onChange={(e) => handleUpdateEditFaqItem(item.id, 'answer', e.target.value)}
+                      placeholder="Answer"
+                      rows={2}
+                      className="text-xs leading-relaxed resize-y"
+                    />
+                  </div>
+                ))}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs gap-1.5 border-dashed cursor-pointer"
+                  onClick={handleAddEditFaqItem}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add Another Question
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-muted-foreground">Content</label>
+                <Textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  rows={12}
+                  className="font-mono text-xs leading-relaxed"
+                />
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="p-4 px-6 border-t border-border/50 bg-card/50 shrink-0 flex items-center justify-end gap-2 mt-0">
             <Button variant="outline" onClick={() => setEditingFile(null)}>Cancel</Button>
             <Button onClick={handleSaveEdit} disabled={isSubmitting}>
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Check className="w-4 h-4 mr-1" />}

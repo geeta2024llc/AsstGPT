@@ -197,56 +197,58 @@ export default function ActivityFeed() {
         </div>
 
         {/* Filter and Search Bar */}
-        <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-12">
+        <div className="mt-3 sm:mt-4 grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-2.5">
           <div className="relative sm:col-span-6 md:col-span-7">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               placeholder="Search actions, details, or users..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-9 pl-9 text-xs"
+              className="h-9 pl-8 text-xs sm:text-sm bg-background"
             />
           </div>
 
-          <div className="sm:col-span-3 md:col-span-3">
-            <Select
-              value={typeFilter}
-              onValueChange={(val) => {
-                setTypeFilter(val);
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="h-9 text-xs">
-                <Filter className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
-                <SelectValue placeholder="All Types" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all" className="text-xs">All Types</SelectItem>
-                <SelectItem value="info" className="text-xs">ℹ️ Info</SelectItem>
-                <SelectItem value="success" className="text-xs">✅ Success</SelectItem>
-                <SelectItem value="warning" className="text-xs">⚠️ Warning</SelectItem>
-                <SelectItem value="error" className="text-xs">🛑 Error</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <div className="grid grid-cols-2 gap-2 sm:col-span-6 md:col-span-5">
+            <div>
+              <Select
+                value={typeFilter}
+                onValueChange={(val) => {
+                  setTypeFilter(val);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="h-9 text-xs bg-background">
+                  <Filter className="h-3 w-3 mr-1 text-muted-foreground shrink-0" />
+                  <SelectValue placeholder="All Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" className="text-xs">All Types</SelectItem>
+                  <SelectItem value="info" className="text-xs">ℹ️ Info</SelectItem>
+                  <SelectItem value="success" className="text-xs">✅ Success</SelectItem>
+                  <SelectItem value="warning" className="text-xs">⚠️ Warning</SelectItem>
+                  <SelectItem value="error" className="text-xs">🛑 Error</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div className="sm:col-span-3 md:col-span-2">
-            <Select
-              value={pageSize.toString()}
-              onValueChange={(val) => {
-                setPageSize(Number(val));
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="h-9 text-xs">
-                <SelectValue placeholder="10 / page" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="10" className="text-xs">10 per page</SelectItem>
-                <SelectItem value="25" className="text-xs">25 per page</SelectItem>
-                <SelectItem value="50" className="text-xs">50 per page</SelectItem>
-              </SelectContent>
-            </Select>
+            <div>
+              <Select
+                value={pageSize.toString()}
+                onValueChange={(val) => {
+                  setPageSize(Number(val));
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="h-9 text-xs bg-background">
+                  <SelectValue placeholder="10 / page" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10" className="text-xs">10 / page</SelectItem>
+                  <SelectItem value="25" className="text-xs">25 / page</SelectItem>
+                  <SelectItem value="50" className="text-xs">50 / page</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
       </CardHeader>

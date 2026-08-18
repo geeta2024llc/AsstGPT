@@ -516,85 +516,85 @@ export default function ClientDetailPage() {
       </div>
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
         {/* Card 1: Total Clients */}
-        <Card className="border-border/60 bg-card/60 backdrop-blur-sm shadow-sm relative overflow-hidden">
+        <Card className="border-border/60 bg-card/60 backdrop-blur-sm shadow-xs relative overflow-hidden">
           <div className="absolute top-0 right-0 h-16 w-16 bg-blue-500/10 rounded-full blur-2xl -mr-4 -mt-4" />
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <CardHeader className="flex flex-row items-center justify-between pb-1 sm:pb-2 pt-3 px-3 sm:pt-4 sm:px-4">
+            <CardTitle className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-muted-foreground truncate mr-1">
               Total Clients
             </CardTitle>
-            <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
-              <Users className="h-4 w-4" />
+            <div className="p-1.5 sm:p-2 rounded-lg bg-blue-500/10 text-blue-500 shrink-0">
+              <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono">{totalClientsCount}</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Registered WhatsApp contacts
+          <CardContent className="px-3 pb-3 sm:px-4 sm:pb-4">
+            <div className="text-xl sm:text-2xl font-bold font-mono">{totalClientsCount}</div>
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 truncate">
+              Registered contacts
             </p>
           </CardContent>
         </Card>
 
         {/* Card 2: Leads & Prospects */}
-        <Card className="border-border/60 bg-card/60 backdrop-blur-sm shadow-sm relative overflow-hidden">
+        <Card className="border-border/60 bg-card/60 backdrop-blur-sm shadow-xs relative overflow-hidden">
           <div className="absolute top-0 right-0 h-16 w-16 bg-purple-500/10 rounded-full blur-2xl -mr-4 -mt-4" />
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <CardHeader className="flex flex-row items-center justify-between pb-1 sm:pb-2 pt-3 px-3 sm:pt-4 sm:px-4">
+            <CardTitle className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-muted-foreground truncate mr-1">
               Leads & Prospects
             </CardTitle>
-            <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500">
-              <UserPlus className="h-4 w-4" />
+            <div className="p-1.5 sm:p-2 rounded-lg bg-purple-500/10 text-purple-500 shrink-0">
+              <UserPlus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono text-purple-600 dark:text-purple-400">
+          <CardContent className="px-3 pb-3 sm:px-4 sm:pb-4">
+            <div className="text-xl sm:text-2xl font-bold font-mono text-purple-600 dark:text-purple-400">
               {activeLeadsCount}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {stageCounts.lead || 0} Leads • {stageCounts.prospect || 0} In Evaluation
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 truncate">
+              {stageCounts.lead || 0} Leads • {stageCounts.prospect || 0} In Eval
             </p>
           </CardContent>
         </Card>
 
         {/* Card 3: Customers & VIP */}
-        <Card className="border-border/60 bg-card/60 backdrop-blur-sm shadow-sm relative overflow-hidden">
+        <Card className="border-border/60 bg-card/60 backdrop-blur-sm shadow-xs relative overflow-hidden">
           <div className="absolute top-0 right-0 h-16 w-16 bg-emerald-500/10 rounded-full blur-2xl -mr-4 -mt-4" />
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Paying & VIP Clients
+          <CardHeader className="flex flex-row items-center justify-between pb-1 sm:pb-2 pt-3 px-3 sm:pt-4 sm:px-4">
+            <CardTitle className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-muted-foreground truncate mr-1">
+              Paying & VIP
             </CardTitle>
-            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500">
-              <Star className="h-4 w-4" />
+            <div className="p-1.5 sm:p-2 rounded-lg bg-emerald-500/10 text-emerald-500 shrink-0">
+              <Star className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
+          <CardContent className="px-3 pb-3 sm:px-4 sm:pb-4">
+            <div className="text-xl sm:text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
               {customersCount}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {stageCounts.customer || 0} Active • {stageCounts.vip || 0} VIP Members
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 truncate">
+              {stageCounts.customer || 0} Active • {stageCounts.vip || 0} VIP
             </p>
           </CardContent>
         </Card>
 
         {/* Card 4: Total Messages */}
-        <Card className="border-border/60 bg-card/60 backdrop-blur-sm shadow-sm relative overflow-hidden">
+        <Card className="border-border/60 bg-card/60 backdrop-blur-sm shadow-xs relative overflow-hidden">
           <div className="absolute top-0 right-0 h-16 w-16 bg-amber-500/10 rounded-full blur-2xl -mr-4 -mt-4" />
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <CardHeader className="flex flex-row items-center justify-between pb-1 sm:pb-2 pt-3 px-3 sm:pt-4 sm:px-4">
+            <CardTitle className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-muted-foreground truncate mr-1">
               Total Messages
             </CardTitle>
-            <div className="p-2 rounded-lg bg-amber-500/10 text-amber-500">
-              <MessageSquare className="h-4 w-4" />
+            <div className="p-1.5 sm:p-2 rounded-lg bg-amber-500/10 text-amber-500 shrink-0">
+              <MessageSquare className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold font-mono text-amber-600 dark:text-amber-400">
+          <CardContent className="px-3 pb-3 sm:px-4 sm:pb-4">
+            <div className="text-xl sm:text-2xl font-bold font-mono text-amber-600 dark:text-amber-400">
               {totalMessageVolume.toLocaleString()}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Total customer interactions logged
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 truncate">
+              Interactions logged
             </p>
           </CardContent>
         </Card>
@@ -602,7 +602,7 @@ export default function ClientDetailPage() {
 
       {/* Filter & Search Bar */}
       <Card className="border-border/60 bg-card/40 backdrop-blur-sm">
-        <CardContent className="p-4 space-y-4">
+        <CardContent className="p-3 sm:p-4 space-y-3 sm:space-y-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             {/* Search Input */}
             <div className="relative flex-1 max-w-md">
@@ -611,7 +611,7 @@ export default function ClientDetailPage() {
                 placeholder="Search by name, phone, email, company, tags..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 h-9 bg-background/80"
+                className="pl-9 h-9 bg-background/80 text-xs sm:text-sm"
               />
               {searchQuery && (
                 <button
@@ -625,14 +625,14 @@ export default function ClientDetailPage() {
             </div>
 
             {/* Sort Dropdown & Page Size */}
-            <div className="flex flex-wrap items-center gap-3 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
                 <span>Per Page:</span>
                 <Select
                   value={String(pageSize)}
                   onValueChange={(val) => setPageSize(Number(val))}
                 >
-                  <SelectTrigger className="h-9 w-[75px] bg-background/80 text-xs">
+                  <SelectTrigger className="h-9 w-[70px] sm:w-[75px] bg-background/80 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -646,12 +646,12 @@ export default function ClientDetailPage() {
 
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
                 <SlidersHorizontal className="h-3.5 w-3.5" />
-                <span>Sort By:</span>
+                <span>Sort:</span>
                 <Select
                   value={sortBy}
                   onValueChange={(val: any) => setSortBy(val)}
                 >
-                  <SelectTrigger className="h-9 w-[170px] bg-background/80 text-xs">
+                  <SelectTrigger className="h-9 w-[150px] sm:w-[170px] bg-background/80 text-xs">
                     <SelectValue placeholder="Sort by" />
                   </SelectTrigger>
                   <SelectContent>
@@ -666,8 +666,8 @@ export default function ClientDetailPage() {
           </div>
 
           {/* Lifecycle Stage Filter Pills */}
-          <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-border/40">
-            <span className="text-xs text-muted-foreground mr-1 flex items-center gap-1 font-medium">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap pt-1 border-t border-border/40 pb-0.5">
+            <span className="text-xs text-muted-foreground mr-1 flex items-center gap-1 font-medium shrink-0">
               <Filter className="h-3 w-3" /> Stage:
             </span>
 
@@ -676,7 +676,7 @@ export default function ClientDetailPage() {
               size="sm"
               onClick={() => setSelectedStage('all')}
               className={cn(
-                'h-7 text-xs px-2.5 rounded-full cursor-pointer',
+                'h-7 text-xs px-2.5 rounded-full cursor-pointer shrink-0',
                 selectedStage === 'all'
                   ? 'bg-primary text-primary-foreground font-semibold'
                   : 'bg-background/60 hover:bg-muted/80'
@@ -690,7 +690,7 @@ export default function ClientDetailPage() {
               size="sm"
               onClick={() => setSelectedStage('lead')}
               className={cn(
-                'h-7 text-xs px-2.5 rounded-full gap-1 cursor-pointer',
+                'h-7 text-xs px-2.5 rounded-full gap-1 cursor-pointer shrink-0',
                 selectedStage === 'lead'
                   ? 'bg-blue-600 text-white font-semibold'
                   : 'bg-background/60 hover:bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30'
@@ -705,7 +705,7 @@ export default function ClientDetailPage() {
               size="sm"
               onClick={() => setSelectedStage('prospect')}
               className={cn(
-                'h-7 text-xs px-2.5 rounded-full gap-1 cursor-pointer',
+                'h-7 text-xs px-2.5 rounded-full gap-1 cursor-pointer shrink-0',
                 selectedStage === 'prospect'
                   ? 'bg-purple-600 text-white font-semibold'
                   : 'bg-background/60 hover:bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30'
@@ -720,7 +720,7 @@ export default function ClientDetailPage() {
               size="sm"
               onClick={() => setSelectedStage('customer')}
               className={cn(
-                'h-7 text-xs px-2.5 rounded-full gap-1 cursor-pointer',
+                'h-7 text-xs px-2.5 rounded-full gap-1 cursor-pointer shrink-0',
                 selectedStage === 'customer'
                   ? 'bg-emerald-600 text-white font-semibold'
                   : 'bg-background/60 hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
@@ -735,7 +735,7 @@ export default function ClientDetailPage() {
               size="sm"
               onClick={() => setSelectedStage('vip')}
               className={cn(
-                'h-7 text-xs px-2.5 rounded-full gap-1 cursor-pointer',
+                'h-7 text-xs px-2.5 rounded-full gap-1 cursor-pointer shrink-0',
                 selectedStage === 'vip'
                   ? 'bg-amber-600 text-white font-semibold'
                   : 'bg-background/60 hover:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
@@ -750,7 +750,7 @@ export default function ClientDetailPage() {
               size="sm"
               onClick={() => setSelectedStage('churned')}
               className={cn(
-                'h-7 text-xs px-2.5 rounded-full gap-1 cursor-pointer',
+                'h-7 text-xs px-2.5 rounded-full gap-1 cursor-pointer shrink-0',
                 selectedStage === 'churned'
                   ? 'bg-rose-600 text-white font-semibold'
                   : 'bg-background/60 hover:bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30'
@@ -765,30 +765,30 @@ export default function ClientDetailPage() {
 
       {/* Floating / Sticky Bulk Action Bar */}
       {selectedIds.size > 0 && (
-        <div className="sticky top-4 z-20 flex flex-wrap items-center justify-between gap-3 p-3.5 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 dark:from-slate-950 dark:to-slate-900 border border-primary/40 rounded-xl shadow-xl text-white animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/20 text-primary border border-primary/40">
+        <div className="sticky top-4 z-20 flex flex-wrap items-center justify-between gap-3 p-3 sm:p-3.5 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 dark:from-slate-950 dark:to-slate-900 border border-primary/40 rounded-xl shadow-xl text-white animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg bg-primary/20 text-primary border border-primary/40">
               <CheckSquare className="h-4 w-4" />
             </div>
             <div>
               <p className="text-xs font-semibold text-foreground">
                 <span className="text-primary font-bold text-sm">{selectedIds.size}</span> client{selectedIds.size > 1 ? 's' : ''} selected
               </p>
-              <p className="text-[11px] text-muted-foreground">
-                Perform bulk CRM actions on selected contacts
+              <p className="text-[10px] sm:text-[11px] text-muted-foreground">
+                Perform bulk CRM actions
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             {selectedIds.size < filteredAndSortedClients.length && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={selectAllFiltered}
-                className="h-8 text-xs bg-card/60 hover:bg-card border-border cursor-pointer"
+                className="h-7 sm:h-8 text-xs bg-card/60 hover:bg-card border-border cursor-pointer"
               >
-                Select All Filtered ({filteredAndSortedClients.length})
+                Select All ({filteredAndSortedClients.length})
               </Button>
             )}
 
@@ -796,10 +796,10 @@ export default function ClientDetailPage() {
               variant="outline"
               size="sm"
               onClick={handleExportCSV}
-              className="h-8 text-xs bg-card/60 hover:bg-card border-border cursor-pointer gap-1.5"
+              className="h-7 sm:h-8 text-xs bg-card/60 hover:bg-card border-border cursor-pointer gap-1"
             >
               <Download className="h-3.5 w-3.5" />
-              Export Selected
+              <span className="hidden sm:inline">Export</span>
             </Button>
 
             <Button
@@ -809,17 +809,17 @@ export default function ClientDetailPage() {
                 setClientToDeleteSingle(null);
                 setDeleteModalOpen(true);
               }}
-              className="h-8 text-xs bg-rose-600 hover:bg-rose-500 font-semibold gap-1.5 cursor-pointer shadow-md shadow-rose-600/20"
+              className="h-7 sm:h-8 text-xs bg-rose-600 hover:bg-rose-500 font-semibold gap-1 cursor-pointer shadow-md shadow-rose-600/20"
             >
               <Trash2 className="h-3.5 w-3.5" />
-              Delete Selected ({selectedIds.size})
+              <span>Delete ({selectedIds.size})</span>
             </Button>
 
             <Button
               variant="ghost"
               size="sm"
               onClick={deselectAll}
-              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground cursor-pointer"
+              className="h-7 w-7 sm:h-8 sm:w-8 p-0 text-muted-foreground hover:text-foreground cursor-pointer"
               title="Deselect all"
             >
               <X className="h-4 w-4" />
@@ -829,8 +829,9 @@ export default function ClientDetailPage() {
       )}
 
       {/* Main CRM Table Card */}
-      <Card className="border-border/60 bg-card/60 backdrop-blur-sm shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+      <Card className="border-border/60 bg-card/60 backdrop-blur-sm shadow-xs overflow-hidden">
+        {/* Desktop CRM Table View */}
+        <div className="hidden md:block overflow-x-auto">
           <Table>
             <TableHeader className="bg-muted/40">
               <TableRow className="border-b border-border/60 hover:bg-transparent">
@@ -1133,6 +1134,163 @@ export default function ClientDetailPage() {
               )}
             </TableBody>
           </Table>
+        </div>
+
+        {/* Mobile CRM Contact Cards View */}
+        <div className="block md:hidden divide-y divide-border/40">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center p-10 gap-2 text-center">
+              <Loader2 className="h-7 w-7 animate-spin text-primary" />
+              <p className="text-xs text-muted-foreground font-medium">Loading CRM client profiles...</p>
+            </div>
+          ) : paginatedClients.length === 0 ? (
+            <div className="flex flex-col items-center justify-center p-8 text-center gap-2">
+              <Users className="h-8 w-8 text-muted-foreground/50" />
+              <p className="text-sm font-semibold">No client records found</p>
+              <p className="text-xs text-muted-foreground max-w-xs">
+                {searchQuery || selectedStage !== 'all'
+                  ? 'Try adjusting your search criteria or stage filter.'
+                  : 'WhatsApp customer profiles will appear here automatically.'}
+              </p>
+            </div>
+          ) : (
+            paginatedClients.map((client, idx) => {
+              const isCopied = copiedPhoneMap[client.id];
+              const isSelected = selectedIds.has(client.id);
+              const displayPhone = client.formattedPhone || client.phone || 'No phone';
+              const symbolNumber = (validCurrentPage - 1) * pageSize + idx + 1;
+
+              return (
+                <div
+                  key={client.id}
+                  className={cn(
+                    'p-3.5 space-y-2.5 transition-colors',
+                    isSelected && 'bg-primary/5'
+                  )}
+                >
+                  {/* Row 1: Checkbox, Avatar, Name & Stage */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggleSelectClient(client.id)}
+                        aria-label={`Select ${client.name}`}
+                        className="cursor-pointer shrink-0"
+                      />
+                      <Avatar className="h-8 w-8 border border-border/60 shrink-0 bg-muted/40">
+                        <AvatarImage src={client.avatarUrl} alt={client.name} />
+                        <AvatarFallback className="font-semibold text-xs text-primary bg-primary/10">
+                          {client.initials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-xs truncate text-foreground flex items-center gap-1">
+                          <span className="truncate">{client.name}</span>
+                          <span className="font-mono text-[9px] text-muted-foreground shrink-0">#{symbolNumber}</span>
+                        </p>
+                        <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                          {client.company && (
+                            <span className="text-[10px] text-muted-foreground truncate max-w-[130px]">
+                              {client.company}
+                            </span>
+                          )}
+                          {client.tags && client.tags.length > 0 && (
+                            <span className="text-[9px] px-1 py-0 rounded bg-muted text-muted-foreground border">
+                              {client.tags[0]}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <Select
+                      value={client.stage}
+                      onValueChange={(val: LeadStage) => handleStageChange(client, val)}
+                    >
+                      <SelectTrigger className="h-6 text-[10px] font-medium border bg-background/60 shadow-none px-1.5 shrink-0 w-auto">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="lead" className="text-xs">🎯 Lead</SelectItem>
+                        <SelectItem value="prospect" className="text-xs">⚡ Prospect</SelectItem>
+                        <SelectItem value="customer" className="text-xs">💎 Customer</SelectItem>
+                        <SelectItem value="vip" className="text-xs font-semibold text-amber-500">★ VIP</SelectItem>
+                        <SelectItem value="churned" className="text-xs text-rose-500">⚠️ Churned</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Row 2: Contact Info, Messages, Timestamp */}
+                  <div className="grid grid-cols-2 gap-1.5 text-xs bg-muted/30 p-2 rounded-lg border border-border/40">
+                    <div className="flex items-center gap-1 font-mono text-[10px] truncate">
+                      <Phone className="h-3 w-3 text-emerald-500 shrink-0" />
+                      <span className="truncate text-foreground font-medium">{displayPhone}</span>
+                      {displayPhone !== 'No phone' && (
+                        <button
+                          type="button"
+                          onClick={() => handleCopyPhone(displayPhone, client.id)}
+                          className="text-muted-foreground hover:text-primary p-0.5 shrink-0 cursor-pointer"
+                          title="Copy phone"
+                        >
+                          {isCopied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-end gap-1 text-[10px]">
+                      <Badge variant="secondary" className="font-mono text-[9px] px-1.5 py-0">
+                        <MessageSquare className="h-2.5 w-2.5 mr-1" />
+                        {client.messageCount || 0} msgs
+                      </Badge>
+                    </div>
+
+                    <div className="text-[10px] text-muted-foreground truncate col-span-2 flex items-center justify-between pt-0.5">
+                      <span>{format(new Date(client.createdAt), 'MMM d, yyyy • h:mm a')}</span>
+                      {client.email && (
+                        <span className="truncate text-primary max-w-[140px] text-[10px]">{client.email}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Row 3: Action Buttons */}
+                  <div className="flex items-center justify-end gap-1.5 pt-0.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs gap-1 px-2 cursor-pointer flex-1"
+                      onClick={() => router.push(`/inbox?chat=${encodeURIComponent(client.externalId)}`)}
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      <span>Chat</span>
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs gap-1 px-2 cursor-pointer flex-1"
+                      onClick={() => handleOpenDrawer(client.externalId)}
+                    >
+                      <UserCog className="h-3 w-3 text-primary" />
+                      <span>CRM Profile</span>
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-rose-500 cursor-pointer shrink-0"
+                      onClick={() => {
+                        setClientToDeleteSingle(client);
+                        setDeleteModalOpen(true);
+                      }}
+                      title="Delete Contact"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
 
         {/* Pagination & Table Footer */}

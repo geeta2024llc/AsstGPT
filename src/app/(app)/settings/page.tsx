@@ -74,61 +74,61 @@ function SettingsContent() {
         </p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4 sm:space-y-6">
         {/* Navigation Tabs Bar */}
-        <div className="overflow-x-auto pb-1 no-scrollbar">
-          <TabsList className="flex w-max min-w-full sm:min-w-0 p-1 bg-muted/60 border border-border/60 rounded-xl">
-            <TabsTrigger value="workspace" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+        <div className="overflow-x-auto pb-1.5 custom-scrollbar">
+          <TabsList className="flex w-max min-w-full sm:min-w-0 p-1 bg-muted/60 border border-border/60 rounded-xl gap-0.5">
+            <TabsTrigger value="workspace" className="flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1.5 cursor-pointer shrink-0">
               <Building2 className="h-3.5 w-3.5" />
               <span>Workspace</span>
             </TabsTrigger>
 
-            <TabsTrigger value="account" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+            <TabsTrigger value="account" className="flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1.5 cursor-pointer shrink-0">
               <UserCircle className="h-3.5 w-3.5" />
               <span>Account</span>
             </TabsTrigger>
 
-            <TabsTrigger value="channels" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+            <TabsTrigger value="channels" className="flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1.5 cursor-pointer shrink-0">
               <QrCode className="h-3.5 w-3.5 text-emerald-500" />
               <span>Channels</span>
             </TabsTrigger>
 
-            <TabsTrigger value="handoff" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+            <TabsTrigger value="handoff" className="flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1.5 cursor-pointer shrink-0">
               <ShieldAlert className="h-3.5 w-3.5 text-amber-500" />
               <span>Handoff</span>
             </TabsTrigger>
 
-            <TabsTrigger value="reengagement" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+            <TabsTrigger value="reengagement" className="flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1.5 cursor-pointer shrink-0">
               <Clock className="h-3.5 w-3.5 text-blue-500" />
               <span>Re-engage</span>
             </TabsTrigger>
 
-            <TabsTrigger value="dedup" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+            <TabsTrigger value="dedup" className="flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1.5 cursor-pointer shrink-0">
               <Users2 className="h-3.5 w-3.5 text-indigo-500" />
               <span>Data Cleanup</span>
             </TabsTrigger>
 
-            <TabsTrigger value="team" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+            <TabsTrigger value="team" className="flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1.5 cursor-pointer shrink-0">
               <Users className="h-3.5 w-3.5" />
               <span>Team & RBAC</span>
             </TabsTrigger>
 
-            <TabsTrigger value="canned" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+            <TabsTrigger value="canned" className="flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1.5 cursor-pointer shrink-0">
               <MessageSquareQuote className="h-3.5 w-3.5" />
               <span>Quick Replies</span>
             </TabsTrigger>
 
-            <TabsTrigger value="widget" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+            <TabsTrigger value="widget" className="flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1.5 cursor-pointer shrink-0">
               <MessageSquare className="h-3.5 w-3.5" />
               <span>Chat Widget</span>
             </TabsTrigger>
 
-            <TabsTrigger value="webhooks" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+            <TabsTrigger value="webhooks" className="flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1.5 cursor-pointer shrink-0">
               <Webhook className="h-3.5 w-3.5 text-purple-500" />
               <span>Webhooks</span>
             </TabsTrigger>
 
-            <TabsTrigger value="general" className="flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer">
+            <TabsTrigger value="general" className="flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1.5 cursor-pointer shrink-0">
               <Sliders className="h-3.5 w-3.5" />
               <span>Preferences</span>
             </TabsTrigger>

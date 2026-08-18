@@ -46,6 +46,10 @@ export default function WhatsAppConnectPanel() {
       const data: WhatsAppState = await res.json();
       setState(data);
 
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('whatsapp-status-changed', { detail: data }));
+      }
+
       if (data.status === 'connected') {
         setMessage('WhatsApp is linked and active.');
         stopPolling();
@@ -59,6 +63,9 @@ export default function WhatsAppConnectPanel() {
       console.error('Failed to fetch WhatsApp status:', error);
       setState({ status: 'error' });
       setMessage('An error occurred while checking WhatsApp status.');
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('whatsapp-status-changed', { detail: { status: 'error' } }));
+      }
       return null;
     }
   }, [stopPolling]);

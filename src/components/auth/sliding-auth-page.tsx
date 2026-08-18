@@ -277,10 +277,10 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
   return (
     <div className="w-full">
       {/* Sliding Segmented Tab Navigation */}
-      <div className="relative grid grid-cols-2 p-1.5 bg-slate-950/80 border border-slate-800/90 rounded-2xl mb-6 select-none shadow-inner">
+      <div className="relative grid grid-cols-2 p-1.5 bg-zinc-950/80 border border-zinc-800/90 rounded-2xl mb-6 select-none shadow-inner">
         {/* Animated Sliding Pill Highlight */}
         <div
-          className={`absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] rounded-xl bg-gradient-to-r from-emerald-500/20 to-teal-500/15 border border-emerald-500/40 shadow-md shadow-emerald-500/10 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          className={`absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] rounded-xl bg-emerald-500/15 border border-emerald-500/35 shadow-md shadow-emerald-500/10 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
             mode === 'login' ? 'left-1.5' : 'left-[calc(50%+3px)]'
           }`}
         />
@@ -290,7 +290,7 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
           className={`relative z-10 py-2.5 text-xs font-semibold rounded-xl transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer ${
             mode === 'login'
               ? 'text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.35)]'
-              : 'text-slate-400 hover:text-slate-200'
+              : 'text-zinc-400 hover:text-zinc-200'
           }`}
         >
           <Lock className="w-3.5 h-3.5" />
@@ -302,7 +302,7 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
           className={`relative z-10 py-2.5 text-xs font-semibold rounded-xl transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer ${
             mode === 'signup'
               ? 'text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.35)]'
-              : 'text-slate-400 hover:text-slate-200'
+              : 'text-zinc-400 hover:text-zinc-200'
           }`}
         >
           <Sparkles className="w-3.5 h-3.5" />
@@ -341,11 +341,11 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label htmlFor="loginEmail" className="block text-xs font-medium text-slate-300 mb-1.5">
+              <label htmlFor="loginEmail" className="block text-xs font-medium text-zinc-300 mb-1.5">
                 Work Email
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500">
                   <Mail className="w-4 h-4" />
                 </div>
                 <input
@@ -357,17 +357,17 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
                   placeholder="name@company.com"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-950/60 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
+                  className="w-full pl-10 pr-4 py-2.5 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
             <div>
-              <label htmlFor="loginPassword" className="block text-xs font-medium text-slate-300 mb-1.5">
+              <label htmlFor="loginPassword" className="block text-xs font-medium text-zinc-300 mb-1.5">
                 Password
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500">
                   <Lock className="w-4 h-4" />
                 </div>
                 <input
@@ -379,12 +379,12 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
                   placeholder="••••••••••••"
-                  className="w-full pl-10 pr-11 py-2.5 bg-slate-950/60 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
+                  className="w-full pl-10 pr-11 py-2.5 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
                 />
                 <button
                   type="button"
                   onClick={() => setShowLoginPassword(!showLoginPassword)}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 focus:outline-none transition-colors cursor-pointer"
+                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-zinc-500 hover:text-zinc-300 focus:outline-none transition-colors cursor-pointer"
                   title={showLoginPassword ? 'Hide password' : 'Show password'}
                   aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
                 >
@@ -394,26 +394,26 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
             </div>
 
             <div className="flex items-center justify-between pt-0.5 pb-1">
-              <label htmlFor="rememberMe" className="flex items-center gap-2.5 text-xs text-slate-300 cursor-pointer select-none group">
+              <label htmlFor="rememberMe" className="flex items-center gap-2.5 text-xs text-zinc-300 cursor-pointer select-none group">
                 <input
                   id="rememberMe"
                   name="rememberMe"
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded border-slate-700 bg-slate-950/60 text-emerald-500 focus:ring-emerald-500/20 focus:ring-offset-0 focus:ring-2 cursor-pointer accent-emerald-500 transition-all"
+                  className="w-4 h-4 rounded border-zinc-700 bg-zinc-950/70 text-emerald-500 focus:ring-emerald-500/20 focus:ring-offset-0 focus:ring-2 cursor-pointer accent-emerald-500 transition-all"
                 />
-                <span className="group-hover:text-slate-200 transition-colors">Remember me</span>
+                <span className="group-hover:text-zinc-200 transition-colors">Remember me</span>
               </label>
             </div>
 
             <button
               type="submit"
               disabled={loginLoading}
-              className="w-full mt-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-semibold text-sm transition-all shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              className="w-full mt-2 py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold text-sm transition-all shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {loginLoading ? (
-                <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
                   <span>Sign In</span>
@@ -423,8 +423,8 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
             </button>
           </form>
 
-          <div className="mt-6 pt-5 border-t border-slate-800/80 text-center">
-            <p className="text-xs text-slate-400">
+          <div className="mt-6 pt-5 border-t border-zinc-800/80 text-center">
+            <p className="text-xs text-zinc-400">
               Need to set up a new organization?{' '}
               <button
                 type="button"
@@ -458,9 +458,9 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
 
           <form onSubmit={handleSignup} className="space-y-3.5">
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">Your Full Name</label>
+              <label className="block text-xs font-medium text-zinc-300 mb-1.5">Your Full Name</label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500">
                   <User className="w-4 h-4" />
                 </div>
                 <input
@@ -469,15 +469,15 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
                   value={signupFullName}
                   onChange={(e) => setSignupFullName(e.target.value)}
                   placeholder="Sarah Jenkins"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-950/60 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
+                  className="w-full pl-10 pr-4 py-2.5 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">Company / Workspace Name</label>
+              <label className="block text-xs font-medium text-zinc-300 mb-1.5">Company / Workspace Name</label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500">
                   <Building2 className="w-4 h-4" />
                 </div>
                 <input
@@ -486,15 +486,15 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
                   value={signupCompanyName}
                   onChange={(e) => setSignupCompanyName(e.target.value)}
                   placeholder="Acme International"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-950/60 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
+                  className="w-full pl-10 pr-4 py-2.5 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">Work Email</label>
+              <label className="block text-xs font-medium text-zinc-300 mb-1.5">Work Email</label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500">
                   <Mail className="w-4 h-4" />
                 </div>
                 <input
@@ -503,14 +503,14 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
                   value={signupEmail}
                   onChange={(e) => setSignupEmail(e.target.value)}
                   placeholder="sarah@acme.com"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-950/60 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
+                  className="w-full pl-10 pr-4 py-2.5 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
                 />
               </div>
             </div>
 
             {/* Compulsory WhatsApp / Contact Mobile Number with Country Code Dropdown */}
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5 flex items-center justify-between">
+              <label className="block text-xs font-medium text-zinc-300 mb-1.5 flex items-center justify-between">
                 <span className="flex items-center gap-1">
                   WhatsApp / Mobile Number <span className="text-emerald-400 font-bold">*</span>
                 </span>
@@ -524,23 +524,23 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
                   <select
                     value={signupCountryCode}
                     onChange={(e) => setSignupCountryCode(e.target.value)}
-                    className="w-full h-[42px] pl-2.5 pr-7 bg-slate-950/70 border border-slate-800 rounded-xl text-xs text-white appearance-none focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors cursor-pointer"
+                    className="w-full h-[42px] pl-2.5 pr-7 bg-zinc-950/70 border border-zinc-800 rounded-xl text-xs text-white appearance-none focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors cursor-pointer"
                   >
                     {COUNTRY_CODES.map((c) => (
-                      <option key={`${c.code}-${c.dialCode}`} value={c.dialCode} className="bg-slate-900 text-white text-xs">
+                      <option key={`${c.code}-${c.dialCode}`} value={c.dialCode} className="bg-zinc-900 text-white text-xs">
                         {c.flag} {c.code} ({c.dialCode})
                       </option>
                     ))}
                   </select>
-                  <div className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none text-slate-500">
+                  <div className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none text-zinc-500">
                     <ChevronDown className="w-3.5 h-3.5" />
                   </div>
                 </div>
 
                 {/* Phone Number Input */}
                 <div className="relative flex-1">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                    <Phone className="w-4 h-4 text-slate-500" />
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500">
+                    <Phone className="w-4 h-4 text-zinc-500" />
                   </div>
                   <input
                     type="tel"
@@ -548,16 +548,16 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
                     value={signupPhone}
                     onChange={(e) => setSignupPhone(e.target.value.replace(/[^0-9\s-]/g, ''))}
                     placeholder="98XXXXXXXX"
-                    className="w-full h-[42px] pl-10 pr-4 bg-slate-950/60 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
+                    className="w-full h-[42px] pl-10 pr-4 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
                   />
                 </div>
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">Password</label>
+              <label className="block text-xs font-medium text-zinc-300 mb-1.5">Password</label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500">
                   <Lock className="w-4 h-4" />
                 </div>
                 <input
@@ -567,12 +567,12 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
                   value={signupPassword}
                   onChange={(e) => setSignupPassword(e.target.value)}
                   placeholder="Minimum 8 characters"
-                  className="w-full pl-10 pr-11 py-2.5 bg-slate-950/60 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
+                  className="w-full pl-10 pr-11 py-2.5 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
                 />
                 <button
                   type="button"
                   onClick={() => setShowSignupPassword(!showSignupPassword)}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 focus:outline-none transition-colors cursor-pointer"
+                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-zinc-500 hover:text-zinc-300 focus:outline-none transition-colors cursor-pointer"
                   title={showSignupPassword ? 'Hide password' : 'Show password'}
                   aria-label={showSignupPassword ? 'Hide password' : 'Show password'}
                 >
@@ -584,10 +584,10 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
             <button
               type="submit"
               disabled={signupLoading}
-              className="w-full mt-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-semibold text-sm transition-all shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              className="w-full mt-2 py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold text-sm transition-all shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {signupLoading ? (
-                <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
                   <span>Create Account & Workspace</span>
@@ -597,8 +597,8 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
             </button>
           </form>
 
-          <div className="mt-6 pt-5 border-t border-slate-800/80 text-center">
-            <p className="text-xs text-slate-400">
+          <div className="mt-6 pt-5 border-t border-zinc-800/80 text-center">
+            <p className="text-xs text-zinc-400">
               Already have an account?{' '}
               <button
                 type="button"
@@ -617,32 +617,32 @@ function SlidingAuthForm({ initialMode = 'login' }: SlidingAuthProps) {
 
 export default function SlidingAuthPage({ initialMode = 'login' }: SlidingAuthProps) {
   return (
-    <div className="min-h-screen w-full bg-[#0a0f1d] text-slate-100 flex items-center justify-center p-4 relative overflow-hidden font-sans selection:bg-emerald-500/30">
+    <div className="min-h-screen w-full bg-[#181a1d] text-zinc-100 flex items-center justify-center p-4 relative overflow-hidden font-sans selection:bg-emerald-500/30">
       {/* Dynamic ambient background luminous glow */}
       <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] rounded-full bg-emerald-500/10 blur-[130px] pointer-events-none" />
-      <div className="absolute bottom-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full bg-blue-600/10 blur-[150px] pointer-events-none" />
+      <div className="absolute bottom-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full bg-emerald-600/5 blur-[150px] pointer-events-none" />
 
       <div className="w-full max-w-md z-10">
         {/* Brand Header */}
         <div className="text-center mb-7">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 p-[1px] shadow-lg shadow-emerald-500/20 mb-4">
-            <div className="w-full h-full bg-[#0a0f1d] rounded-2xl flex items-center justify-center">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 shadow-lg shadow-emerald-500/15 mb-4">
+            <div className="w-full h-full rounded-2xl flex items-center justify-center">
               <Sparkles className="w-7 h-7 text-emerald-400" />
             </div>
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-white">AsstGPT Platform</h1>
-          <p className="text-sm text-slate-400 mt-1">Autonomous WhatsApp & Omnichannel AI Agent</p>
+          <p className="text-sm text-zinc-400 mt-1">Autonomous WhatsApp & Omnichannel AI Agent</p>
         </div>
 
         {/* Glassmorphic Sliding Auth Card */}
-        <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-6 sm:p-7 shadow-2xl shadow-black/70">
-          <Suspense fallback={<div className="py-12 text-center text-xs text-slate-500">Loading authentication...</div>}>
+        <div className="bg-[#222428]/90 backdrop-blur-xl border border-zinc-800/90 rounded-2xl p-6 sm:p-7 shadow-2xl shadow-black/80">
+          <Suspense fallback={<div className="py-12 text-center text-xs text-zinc-500">Loading authentication...</div>}>
             <SlidingAuthForm initialMode={initialMode} />
           </Suspense>
         </div>
 
         {/* Footer info */}
-        <p className="text-center text-[11px] text-slate-600 mt-6">
+        <p className="text-center text-[11px] text-zinc-500 mt-6">
           Protected by End-to-End Database Isolation & RBAC Security
         </p>
       </div>
