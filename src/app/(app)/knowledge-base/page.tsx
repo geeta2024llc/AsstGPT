@@ -54,10 +54,10 @@ function KnowledgeBaseContent() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-1">
-        <h1 className="font-headline text-3xl font-bold flex items-center gap-2.5">
-          <BookOpen className="h-7 w-7 text-primary" /> AI Memory & Personality
+        <h1 className="font-headline text-xl sm:text-2xl md:text-3xl font-bold flex items-center gap-2">
+          <BookOpen className="h-5 w-5 sm:h-7 sm:w-7 text-primary shrink-0" /> AI Memory & Personality
         </h1>
-        <p className="text-sm text-muted-foreground max-w-3xl">
+        <p className="text-xs sm:text-sm text-muted-foreground max-w-3xl">
           Feed verified business facts, store hours, pricing FAQs, and documents to your AI, and customize your bot&apos;s
           identity, avatar, tone of voice, and prompt instructions — all in one place.
         </p>

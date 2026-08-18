@@ -334,12 +334,17 @@ export default function KnowledgeBaseManager() {
 
     let finalContent = editContent.trim();
     if (editType === 'faq' && !editModeRaw) {
-      const validItems = editFaqItems.filter(i => i.question.trim() || i.answer.trim());
+      const validItems = editFaqItems.filter(i => i.question.trim() && i.answer.trim());
       finalContent = formatFaqContent(validItems);
     }
 
     if (!editTitle.trim()) {
       toast({ variant: 'destructive', title: 'Title Required', description: 'Please enter a title.' });
+      return;
+    }
+
+    if (!finalContent) {
+      toast({ variant: 'destructive', title: 'Content Required', description: 'Knowledge source cannot be saved with empty content.' });
       return;
     }
 
@@ -374,7 +379,7 @@ export default function KnowledgeBaseManager() {
       const res = await fetch(`/api/knowledge?id=${fileToDelete.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete file.');
       toast({ title: 'Source Removed', description: `"${fileToDelete.name}" was permanently removed from AI memory.` });
-      fetchFiles();
+      await fetchFiles();
     } catch (error) {
       toast({ variant: 'destructive', title: 'Error', description: (error as Error).message });
     } finally {
@@ -1013,7 +1018,10 @@ export default function KnowledgeBaseManager() {
                     size="sm"
                     variant={!editModeRaw ? 'secondary' : 'ghost'}
                     className="h-7 text-xs"
-                    onClick={() => setEditModeRaw(false)}
+                    onClick={() => {
+                      setEditFaqItems(parseFaqContent(editContent));
+                      setEditModeRaw(false);
+                    }}
                   >
                     Structured Q&A
                   </Button>

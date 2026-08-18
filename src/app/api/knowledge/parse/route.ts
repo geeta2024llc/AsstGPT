@@ -87,5 +87,5 @@ export const POST = withApiAuth(
       return NextResponse.json({ message: error.message || 'Failed to create knowledge file' }, { status: 500 });
     }
   },
-  { roles: ['admin'] }
+  { roles: ['admin', 'operator'] }
 );
