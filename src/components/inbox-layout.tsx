@@ -55,7 +55,13 @@ import {
   UserPlus,
   ChevronDown,
   ChevronUp,
+  CalendarClock,
 } from 'lucide-react';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -114,6 +120,12 @@ export default function InboxLayout() {
   const [isProfileDrawerOpen, setIsProfileDrawerOpen] = useState(false);
   const [cannedFilterText, setCannedFilterText] = useState('');
   const [selectedCannedIndex, setSelectedCannedIndex] = useState(0);
+
+  // Quick Schedule Popover State
+  const [isSchedulePopoverOpen, setIsSchedulePopoverOpen] = useState(false);
+  const [quickScheduleDate, setQuickScheduleDate] = useState('');
+  const [quickScheduleTime, setQuickScheduleTime] = useState('12:00');
+  const [isQuickScheduling, setIsQuickScheduling] = useState(false);
 
   const prevUnreadRef = useRef<number>(0);
   const { toast } = useToast();
@@ -828,6 +840,72 @@ export default function InboxLayout() {
       setFailedMessageIds(prev => new Set(prev).add(tempId));
       toast({ variant: 'destructive', title: 'Send Failed', description: (error as Error).message });
     }
+  };
+
+  const handleOpenSchedulePopover = () => {
+    if (!quickScheduleDate) {
+      const future = new Date(Date.now() + 60 * 60 * 1000);
+      setQuickScheduleDate(format(future, 'yyyy-MM-dd'));
+      setQuickScheduleTime(format(future, 'HH:mm'));
+    }
+    setIsSchedulePopoverOpen(true);
+  };
+
+  const handleQuickSchedule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !selectedConversationId) {
+      toast({ variant: 'destructive', title: 'Empty Message', description: 'Please type a message before scheduling.' });
+      return;
+    }
+
+    if (!quickScheduleDate || !quickScheduleTime) {
+      toast({ variant: 'destructive', title: 'Select Time', description: 'Please choose a date and time.' });
+      return;
+    }
+
+    const scheduledIso = new Date(`${quickScheduleDate}T${quickScheduleTime}:00`).toISOString();
+    if (new Date(scheduledIso).getTime() < Date.now() - 5000) {
+      toast({ variant: 'destructive', title: 'Invalid Time', description: 'Scheduled time must be in the future.' });
+      return;
+    }
+
+    setIsQuickScheduling(true);
+    try {
+      const res = await fetch('/api/scheduled-messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipientJid: selectedConversationId,
+          recipientName: selectedConversation?.name || undefined,
+          messageType: 'text',
+          content: newMessage.trim(),
+          scheduledAt: scheduledIso,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to schedule message');
+      }
+
+      toast({
+        title: '📅 Message Scheduled',
+        description: `Will be sent on ${format(new Date(scheduledIso), 'PPpp')}`,
+      });
+
+      setNewMessage('');
+      setIsSchedulePopoverOpen(false);
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Schedule Failed', description: err.message });
+    } finally {
+      setIsQuickScheduling(false);
+    }
+  };
+
+  const setQuickScheduleMinutes = (mins: number) => {
+    const future = new Date(Date.now() + mins * 60 * 1000);
+    setQuickScheduleDate(format(future, 'yyyy-MM-dd'));
+    setQuickScheduleTime(format(future, 'HH:mm'));
   };
 
   const formatTimestamp = (ts: number) => {
@@ -1825,6 +1903,124 @@ export default function InboxLayout() {
                         : 'bg-background focus-visible:ring-primary'
                     )}
                   />
+
+                  {composerMode === 'message' && (
+                    <Popover open={isSchedulePopoverOpen} onOpenChange={setIsSchedulePopoverOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={handleOpenSchedulePopover}
+                          disabled={!newMessage.trim()}
+                          className="h-9 w-9 shrink-0 cursor-pointer rounded-lg text-muted-foreground hover:text-primary hover:border-primary/50"
+                          title="Schedule message for future delivery"
+                        >
+                          <CalendarClock className="h-4 w-4" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-80 p-3.5 space-y-3" align="end" side="top">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 font-semibold text-xs text-foreground">
+                            <CalendarClock className="h-4 w-4 text-primary" />
+                            <span>Schedule WhatsApp Message</span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground">
+                            Set date and time to deliver this reply automatically.
+                          </p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[10px] font-semibold text-muted-foreground block mb-1">Date</label>
+                              <Input
+                                type="date"
+                                value={quickScheduleDate}
+                                onChange={(e) => setQuickScheduleDate(e.target.value)}
+                                className="h-8 text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-semibold text-muted-foreground block mb-1">Time</label>
+                              <Input
+                                type="time"
+                                value={quickScheduleTime}
+                                onChange={(e) => setQuickScheduleTime(e.target.value)}
+                                className="h-8 text-xs"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Presets */}
+                          <div className="flex flex-wrap gap-1 pt-1">
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setQuickScheduleMinutes(30)}
+                              className="h-6 text-[10px] px-1.5"
+                            >
+                              +30m
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setQuickScheduleMinutes(60)}
+                              className="h-6 text-[10px] px-1.5"
+                            >
+                              +1h
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setQuickScheduleMinutes(240)}
+                              className="h-6 text-[10px] px-1.5"
+                            >
+                              +4h
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setQuickScheduleMinutes(1440)}
+                              className="h-6 text-[10px] px-1.5"
+                            >
+                              Tomorrow
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t flex items-center justify-between">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setIsSchedulePopoverOpen(false)}
+                            className="h-7 text-xs"
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={handleQuickSchedule}
+                            disabled={isQuickScheduling}
+                            className="h-7 text-xs gap-1.5 bg-primary text-primary-foreground font-semibold"
+                          >
+                            {isQuickScheduling ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <CalendarClock className="h-3 w-3" />
+                            )}
+                            <span>Confirm Schedule</span>
+                          </Button>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  )}
 
                   <Button
                     type="submit"

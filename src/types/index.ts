@@ -438,3 +438,29 @@ export interface AnalyticsData {
   };
   agentPerformance: AgentMetricPoint[];
 }
+
+// --- Scheduled Messages Types ---
+
+export type ScheduledMessageStatus = 'pending' | 'processing' | 'sent' | 'failed' | 'cancelled';
+export type ScheduledMessageType = 'text' | 'image' | 'video';
+
+export interface ScheduledMessage {
+  id: string;
+  recipientJid: string;
+  recipientName?: string;
+  messageType: ScheduledMessageType;
+  content?: string;
+  mediaUrl?: string;
+  mediaMimeType?: string;
+  mediaFileName?: string;
+  scheduledAt: string; // ISO string
+  status: ScheduledMessageStatus;
+  errorMessage?: string;
+  sentAt?: string;
+  baileysMessageId?: string;
+  createdByUserId?: string;
+  createdByName?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+

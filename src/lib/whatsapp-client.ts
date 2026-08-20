@@ -1140,3 +1140,124 @@ export async function sendVoiceNoteForTenant(tenantId: string = DEFAULT_TENANT_I
 export async function sendVoiceNote(to: string, audioBuffer: Buffer, transcriptText?: string) {
   return sendVoiceNoteForTenant(DEFAULT_TENANT_ID, to, audioBuffer, transcriptText);
 }
+
+async function resolveMediaSource(mediaUrl: string): Promise<Buffer | { url: string }> {
+  if (mediaUrl.startsWith('/uploads/') || mediaUrl.startsWith('uploads/')) {
+    const cleanPath = mediaUrl.startsWith('/') ? mediaUrl.slice(1) : mediaUrl;
+    const localFilePath = path.join(process.cwd(), 'public', cleanPath);
+    try {
+      const buf = await fs.readFile(localFilePath);
+      return buf;
+    } catch (err) {
+      console.warn('Failed to read local media file, falling back to URL:', err);
+      return { url: mediaUrl };
+    }
+  }
+  return { url: mediaUrl };
+}
+
+export async function sendImageForTenant(
+  tenantId: string = DEFAULT_TENANT_ID,
+  to: string,
+  imageUrl: string,
+  caption?: string
+) {
+  const tenantState = getOrCreateTenantState(tenantId);
+  if (!tenantState.sock || tenantState.status !== 'connected') {
+    throw new Error(`WhatsApp client not connected for workspace ${tenantId}.`);
+  }
+
+  const mediaSource = await resolveMediaSource(imageUrl);
+  const payload: any = {
+    image: mediaSource,
+  };
+  if (caption && caption.trim()) {
+    payload.caption = caption.trim();
+  }
+
+  const sendResult = await tenantState.sock.sendMessage(to, payload);
+  const result = (Array.isArray(sendResult) ? sendResult[0] : sendResult) as any;
+
+  const message: Message = {
+    id: result.key.id!,
+    chatId: to,
+    fromMe: true,
+    text: caption ? `[Image]: ${caption}` : '[Image]',
+    timestamp: Date.now(),
+    senderName: 'Me',
+    mediaType: 'image',
+    mediaCaption: caption || undefined,
+  };
+
+  await db.addMessage(message);
+  const existingConvo = await db.getConversation(to);
+  const updates: any = {
+    lastMessage: { text: message.text, timestamp: message.timestamp },
+    unreadCount: 0,
+  };
+  if (existingConvo && !existingConvo.firstResponseTimeMs && existingConvo.lastMessage?.timestamp) {
+    updates.firstResponseTimeMs = Math.max(0, Date.now() - existingConvo.lastMessage.timestamp);
+  }
+  await db.updateConversation(to, updates);
+  await db.incrementStat('sent');
+
+  return result;
+}
+
+export async function sendImage(to: string, imageUrl: string, caption?: string) {
+  return sendImageForTenant(DEFAULT_TENANT_ID, to, imageUrl, caption);
+}
+
+export async function sendVideoForTenant(
+  tenantId: string = DEFAULT_TENANT_ID,
+  to: string,
+  videoUrl: string,
+  caption?: string
+) {
+  const tenantState = getOrCreateTenantState(tenantId);
+  if (!tenantState.sock || tenantState.status !== 'connected') {
+    throw new Error(`WhatsApp client not connected for workspace ${tenantId}.`);
+  }
+
+  const mediaSource = await resolveMediaSource(videoUrl);
+  const payload: any = {
+    video: mediaSource,
+  };
+  if (caption && caption.trim()) {
+    payload.caption = caption.trim();
+  }
+
+  const sendResult = await tenantState.sock.sendMessage(to, payload);
+  const result = (Array.isArray(sendResult) ? sendResult[0] : sendResult) as any;
+
+  const message: Message = {
+    id: result.key.id!,
+    chatId: to,
+    fromMe: true,
+    text: caption ? `[Video]: ${caption}` : '[Video]',
+    timestamp: Date.now(),
+    senderName: 'Me',
+    mediaType: 'document', // message media type mapping
+    mediaCaption: caption || undefined,
+  };
+
+  await db.addMessage(message);
+  const existingConvo = await db.getConversation(to);
+  const updates: any = {
+    lastMessage: { text: message.text, timestamp: message.timestamp },
+    unreadCount: 0,
+  };
+  if (existingConvo && !existingConvo.firstResponseTimeMs && existingConvo.lastMessage?.timestamp) {
+    updates.firstResponseTimeMs = Math.max(0, Date.now() - existingConvo.lastMessage.timestamp);
+  }
+  await db.updateConversation(to, updates);
+  await db.incrementStat('sent');
+
+  return result;
+}
+
+export async function sendVideo(to: string, videoUrl: string, caption?: string) {
+  return sendVideoForTenant(DEFAULT_TENANT_ID, to, videoUrl, caption);
+}
+
+

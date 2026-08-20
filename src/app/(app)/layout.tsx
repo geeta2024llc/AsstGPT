@@ -22,6 +22,7 @@ import {
   Bot,
   LayoutDashboard,
   MessageSquare,
+  CalendarClock,
   Users,
   Settings,
   BookMarked,
@@ -189,6 +190,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <Link href="/inbox">
                   <MessageSquare />
                   <span>Inbox</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={pathname.startsWith('/scheduled')}
+                tooltip="Scheduled Messages"
+              >
+                <Link href="/scheduled">
+                  <CalendarClock />
+                  <span>Scheduled</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

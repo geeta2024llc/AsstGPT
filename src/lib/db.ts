@@ -4,7 +4,7 @@ if (typeof window !== 'undefined') {
 
 import { getSupabaseAdmin } from './supabase';
 import { getRequestContext } from './request-context';
-import type { Conversation, Message, Agent, Stats, KnowledgeFile, LogEntry, TeamMember, HandoffRule, CannedResponse, ConversationNote, ContactProfile, ClientDetailItem, LeadStage, WebhookConfig, WebhookEventType, WebhookPayload, SLAMetrics, SentimentType, WidgetConfig, ReEngagementConfig, TenantInvitation, InvitationRole, UserRole, UserStatus, TenantProfile, TenantNotificationSettings } from '@/types';
+import type { Conversation, Message, Agent, Stats, KnowledgeFile, LogEntry, TeamMember, HandoffRule, CannedResponse, ConversationNote, ContactProfile, ClientDetailItem, LeadStage, WebhookConfig, WebhookEventType, WebhookPayload, SLAMetrics, SentimentType, WidgetConfig, ReEngagementConfig, TenantInvitation, InvitationRole, UserRole, UserStatus, TenantProfile, TenantNotificationSettings, ScheduledMessage, ScheduledMessageStatus, ScheduledMessageType } from '@/types';
 import crypto from 'crypto';
 import { formatContactName, isSyntheticOrGenericName, formatPhoneNumber, getAvatarInitials } from './format-utils';
 
@@ -3108,6 +3108,268 @@ export async function getStaleConversationsForReEngagement(
     return [];
   }
 }
+
+// ============================================================================
+// Scheduled Messages Database Layer
+// ============================================================================
+
+function mapScheduledMessageRow(row: any): ScheduledMessage {
+  return {
+    id: row.id,
+    recipientJid: row.recipient_jid,
+    recipientName: row.recipient_name || undefined,
+    messageType: row.message_type || 'text',
+    content: row.content || undefined,
+    mediaUrl: row.media_url || undefined,
+    mediaMimeType: row.media_mime_type || undefined,
+    mediaFileName: row.media_file_name || undefined,
+    scheduledAt: row.scheduled_at,
+    status: row.status || 'pending',
+    errorMessage: row.error_message || undefined,
+    sentAt: row.sent_at || undefined,
+    baileysMessageId: row.baileys_message_id || undefined,
+    createdByUserId: row.created_by_user_id || undefined,
+    createdByName: row.created_by_name || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at || undefined,
+  };
+}
+
+export async function getScheduledMessages(options?: {
+  status?: ScheduledMessageStatus;
+  limit?: number;
+  offset?: number;
+}): Promise<ScheduledMessage[]> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { tenantId } = await ensureDefaultTenantAndChannel();
+
+    let query = supabase
+      .from('scheduled_messages')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('scheduled_at', { ascending: true });
+
+    if (options?.status) {
+      query = query.eq('status', options.status);
+    }
+    if (options?.limit) {
+      query = query.limit(options.limit);
+    }
+    if (options?.offset) {
+      query = query.range(options.offset, options.offset + (options.limit || 50) - 1);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('Error fetching scheduled messages:', error);
+      return [];
+    }
+
+    return (data || []).map(mapScheduledMessageRow);
+  } catch (err) {
+    console.error('Unexpected error in getScheduledMessages:', err);
+    return [];
+  }
+}
+
+export async function getScheduledMessage(id: string): Promise<ScheduledMessage | null> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { tenantId } = await ensureDefaultTenantAndChannel();
+
+    const { data, error } = await supabase
+      .from('scheduled_messages')
+      .select('*')
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return mapScheduledMessageRow(data);
+  } catch (err) {
+    console.error('Error in getScheduledMessage:', err);
+    return null;
+  }
+}
+
+export async function createScheduledMessage(input: {
+  recipientJid: string;
+  recipientName?: string;
+  messageType: ScheduledMessageType;
+  content?: string;
+  mediaUrl?: string;
+  mediaMimeType?: string;
+  mediaFileName?: string;
+  scheduledAt: string;
+  createdByUserId?: string;
+  createdByName?: string;
+}): Promise<ScheduledMessage> {
+  const supabase = getSupabaseAdmin();
+  const { tenantId } = await ensureDefaultTenantAndChannel();
+
+  const insertPayload = {
+    tenant_id: tenantId,
+    recipient_jid: input.recipientJid,
+    recipient_name: input.recipientName || null,
+    message_type: input.messageType,
+    content: input.content || null,
+    media_url: input.mediaUrl || null,
+    media_mime_type: input.mediaMimeType || null,
+    media_file_name: input.mediaFileName || null,
+    scheduled_at: input.scheduledAt,
+    status: 'pending',
+    created_by_user_id: input.createdByUserId || null,
+    created_by_name: input.createdByName || null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from('scheduled_messages')
+    .insert(insertPayload)
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    console.error('Failed to insert scheduled message:', error);
+    throw new Error(error?.message || 'Failed to create scheduled message');
+  }
+
+  await addLog({
+    user: input.createdByName || 'Operator',
+    action: 'Message Scheduled',
+    details: `Scheduled ${input.messageType} message for ${input.recipientName || input.recipientJid} at ${new Date(input.scheduledAt).toLocaleString()}`,
+    type: 'info',
+  });
+
+  return mapScheduledMessageRow(data);
+}
+
+export async function updateScheduledMessage(
+  id: string,
+  updates: Partial<{
+    recipientJid: string;
+    recipientName: string;
+    messageType: ScheduledMessageType;
+    content: string;
+    mediaUrl: string | null;
+    mediaMimeType: string | null;
+    mediaFileName: string | null;
+    scheduledAt: string;
+    status: ScheduledMessageStatus;
+    errorMessage: string | null;
+    sentAt: string | null;
+    baileysMessageId: string | null;
+  }>
+): Promise<ScheduledMessage | null> {
+  const supabase = getSupabaseAdmin();
+  const { tenantId } = await ensureDefaultTenantAndChannel();
+
+  const payload: Record<string, any> = {
+    updated_at: new Date().toISOString(),
+  };
+
+  if (updates.recipientJid !== undefined) payload.recipient_jid = updates.recipientJid;
+  if (updates.recipientName !== undefined) payload.recipient_name = updates.recipientName;
+  if (updates.messageType !== undefined) payload.message_type = updates.messageType;
+  if (updates.content !== undefined) payload.content = updates.content;
+  if (updates.mediaUrl !== undefined) payload.media_url = updates.mediaUrl;
+  if (updates.mediaMimeType !== undefined) payload.media_mime_type = updates.mediaMimeType;
+  if (updates.mediaFileName !== undefined) payload.media_file_name = updates.mediaFileName;
+  if (updates.scheduledAt !== undefined) payload.scheduled_at = updates.scheduledAt;
+  if (updates.status !== undefined) payload.status = updates.status;
+  if (updates.errorMessage !== undefined) payload.error_message = updates.errorMessage;
+  if (updates.sentAt !== undefined) payload.sent_at = updates.sentAt;
+  if (updates.baileysMessageId !== undefined) payload.baileys_message_id = updates.baileysMessageId;
+
+  const { data, error } = await supabase
+    .from('scheduled_messages')
+    .update(payload)
+    .eq('id', id)
+    .eq('tenant_id', tenantId)
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    console.error('Failed to update scheduled message:', error);
+    return null;
+  }
+
+  return mapScheduledMessageRow(data);
+}
+
+export async function deleteScheduledMessage(id: string): Promise<boolean> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { tenantId } = await ensureDefaultTenantAndChannel();
+
+    const { error } = await supabase
+      .from('scheduled_messages')
+      .delete()
+      .eq('id', id)
+      .eq('tenant_id', tenantId);
+
+    if (error) {
+      console.error('Failed to delete scheduled message:', error);
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error('Error deleting scheduled message:', err);
+    return false;
+  }
+}
+
+export async function getScheduledMessageStats(): Promise<{
+  pending: number;
+  sentToday: number;
+  failed: number;
+  total: number;
+}> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { tenantId } = await ensureDefaultTenantAndChannel();
+
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const { data, error } = await supabase
+      .from('scheduled_messages')
+      .select('status, sent_at')
+      .eq('tenant_id', tenantId);
+
+    if (error || !data) {
+      return { pending: 0, sentToday: 0, failed: 0, total: 0 };
+    }
+
+    let pending = 0;
+    let sentToday = 0;
+    let failed = 0;
+
+    for (const row of data) {
+      if (row.status === 'pending') pending++;
+      else if (row.status === 'failed') failed++;
+      else if (row.status === 'sent') {
+        if (row.sent_at && new Date(row.sent_at) >= startOfDay) {
+          sentToday++;
+        }
+      }
+    }
+
+    return {
+      pending,
+      sentToday,
+      failed,
+      total: data.length,
+    };
+  } catch (err) {
+    console.error('Error fetching scheduled message stats:', err);
+    return { pending: 0, sentToday: 0, failed: 0, total: 0 };
+  }
+}
+
 
 
 

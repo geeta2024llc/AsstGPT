@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from './supabase';
 import { init, sendMessage, WhatsAppClientState, getClientState } from './whatsapp-client';
+import { processScheduledMessages } from './scheduled-message-engine';
 
 const REPLICA_ID =
   process.env.RAILWAY_REPLICA_ID ||
@@ -130,6 +131,9 @@ export async function claimOrRenewLeadership(channelId = 'default'): Promise<boo
 
       // Leader drains outbound queue
       processOutboundQueue(channelId).catch((err) => console.error('[LEADER] Error processing outbound queue:', err));
+
+      // Leader dispatches due scheduled messages
+      processScheduledMessages(channelId).catch((err) => console.error('[LEADER] Error processing scheduled messages:', err));
 
       return true;
     } else {
